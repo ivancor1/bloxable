@@ -33,14 +33,14 @@ export const TOOL_NAMES = [
 
 export type ToolName = (typeof TOOL_NAMES)[number]
 
-/** Shared prose describing the RbxPropValue tagged form (lib/rbx/types.ts). */
-const PROPS_DOC = `Map of exact Roblox property name -> tagged value. Every value is an object with a "type" field.
-Types: "string", "bool", "int", "int64", "float", "double", "token" (an Enum), "Vector3" ([x,y,z]), "CFrame" ({"pos":[x,y,z],"rot":[r00,r01,r02,r10,r11,r12,r20,r21,r22]}), "Color3" ([r,g,b] each 0..1), "ProtectedString" (script source), "Ref" (another instance's id, or null).
+/** Shared prose describing how properties are written (see lib/ai/execute.ts). */
+const PROPS_DOC = `Map of exact Roblox property name -> value, written plainly. The server knows every property's real type from the official Roblox API dump and converts it for you.
+Numbers, strings and true/false are written as they are. A Vector3 is [x, y, z]. A Color3 is [r, g, b] with each channel 0..1. An Enum is the item NAME as a string. Position is the CFrame property: [x, y, z] for an upright object, or {"pos":[x,y,z],"rot":[r00,r01,r02,r10,r11,r12,r20,r21,r22]} when it is rotated. A reference to another object is that object's id, or null.
 Example 1 — a red anchored block 8x1x8 at (0, 4, 0):
-{"Size":{"type":"Vector3","value":[8,1,8]},"CFrame":{"type":"CFrame","value":{"pos":[0,4,0],"rot":[1,0,0,0,1,0,0,0,1]}},"Color":{"type":"Color3","value":[0.77,0.16,0.11]},"Anchored":{"type":"bool","value":true}}
+{"Size":[8,1,8],"CFrame":[0,4,0],"Color":[0.77,0.16,0.11],"Anchored":true}
 Example 2 — a neon green sphere that players pass through:
-{"Shape":{"type":"token","enumName":"PartType","itemName":"Ball"},"Material":{"type":"token","enumName":"Material","itemName":"Neon"},"Color":{"type":"Color3","value":[0.29,0.85,0.39]},"CanCollide":{"type":"bool","value":false},"Transparency":{"type":"float","value":0.2}}
-For Enum properties always give enumName + itemName by name; the raw number is resolved from the official Roblox API dump for you.`
+{"Shape":"Ball","Material":"Neon","Color":[0.29,0.85,0.39],"CanCollide":false,"Transparency":0.2}
+A value of the wrong shape comes back as an error naming the property and the type it actually is.`
 
 /** One level of the create_instances node, inlined to a fixed depth. */
 function childNode(depth: number): Record<string, unknown> {

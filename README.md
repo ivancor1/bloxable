@@ -17,7 +17,7 @@ npm run dev
 
 The chat loop runs on either provider, chosen by whichever key is in `.env.local` (`OPENAI_API_KEY` wins if both are set). Defaults are `gpt-5.5` and `claude-sonnet-5`; override with an `OPENAI_MODEL` or `ANTHROPIC_MODEL` line. The vendor is confined to `lib/ai/providers/` — tools, validation, patching and persistence are shared, so behaviour is identical either way.
 
-`npm run test:engine` builds a place with the real toolchain and verifies it by deserializing with Lune.
+`npm run test:engine` builds a place with the real toolchain and verifies it by deserializing with Lune. `npm run test:ai` checks the chat tool layer against the real API dump: bare property values are typed from the dump, wrong ones are rejected by name.
 
 ## Publish
 
