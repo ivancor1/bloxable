@@ -8,6 +8,7 @@ import { SceneSync } from './sceneSync'
 import { createLightingRig, readLightingConfig, updateLightingRig, applyFog } from './lighting'
 import { createSky, updateSkyPosition } from './sky'
 import { createFlyControls } from './flyControls'
+import GuiOverlay from './GuiOverlay'
 
 // A left-click shorter/tighter than this counts as a "click" (select); anything
 // longer/further was an orbit-drag and should not also fire a selection change.
@@ -187,5 +188,10 @@ export default function Viewer3D() {
     }
   }, [])
 
-  return <div ref={containerRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />
+  return (
+    <div style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+      <div ref={containerRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />
+      <GuiOverlay />
+    </div>
+  )
 }

@@ -163,7 +163,7 @@ export default function SettingsSheet({ onClose }: { onClose: () => void }) {
           </details>
 
           <p className="settings-footer">
-            Preview renders real place data (parts, colors, lighting). Terrain, meshes and GUIs show in Roblox only.
+            Preview renders real place data (parts, colors, lighting) and screen UI. Terrain, meshes and image assets show in Roblox only.
           </p>
         </div>
       </div>
