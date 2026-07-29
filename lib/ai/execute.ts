@@ -4,9 +4,18 @@
 // (lib/rbx/tree) and persistence (lib/store). Keeping this pure makes the
 // mapping directly testable without a model or an API key.
 
-import type { PatchOp, RbxInstance, RbxPropValue, RbxTree } from '@/lib/rbx/types'
+import type {
+  ColorKeypoint,
+  NumberKeypoint,
+  PatchOp,
+  RbxAttrValue,
+  RbxInstance,
+  RbxPropValue,
+  RbxTree,
+} from '@/lib/rbx/types'
 import { getInstances, indexTree, newId, outline } from '@/lib/rbx/tree'
 import { blockyNpc } from '@/lib/rbx/template'
+import { DEFAULT_FONT_FAMILY, resolveFontFamily } from '@/lib/rbx/fonts'
 import type { Reflection } from '@/lib/rbx/validate'
 import { findProperty } from '@/lib/rbx/validate'
 
@@ -31,6 +40,15 @@ const PROP_TYPES = new Set([
   'Color3',
   'ProtectedString',
   'Ref',
+  'UDim',
+  'UDim2',
+  'Vector2',
+  'Rect',
+  'NumberRange',
+  'NumberSequence',
+  'ColorSequence',
+  'Font',
+  'PhysicalProperties',
 ])
 
 /** Tool result payloads are capped so a huge subtree cannot blow up the context. */
@@ -67,6 +85,101 @@ function isNumberTriple(value: unknown): value is [number, number, number] {
   return (
     Array.isArray(value) && value.length === 3 && value.every((n) => typeof n === 'number')
   )
+}
+
+function isNumberPair(value: unknown): value is [number, number] {
+  return Array.isArray(value) && value.length === 2 && value.every((n) => typeof n === 'number')
+}
+
+/** [xs, xo, ys, yo] or [[xs, xo], [ys, yo]] -> the nested pair form. */
+function asPairOfPairs(raw: unknown): [[number, number], [number, number]] | null {
+  if (Array.isArray(raw) && raw.length === 4 && raw.every((n) => typeof n === 'number')) {
+    const [a, b, c, d] = raw as number[]
+    return [
+      [a, b],
+      [c, d],
+    ]
+  }
+  if (Array.isArray(raw) && raw.length === 2 && raw.every(isNumberPair)) {
+    const [a, b] = raw as [[number, number], [number, number]]
+    return [
+      [a[0], a[1]],
+      [b[0], b[1]],
+    ]
+  }
+  return null
+}
+
+/** A number, a [from, to] ramp, or explicit [time, value] keypoints. */
+function asNumberKeypoints(raw: unknown): NumberKeypoint[] | null {
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return [
+      { time: 0, value: raw, envelope: 0 },
+      { time: 1, value: raw, envelope: 0 },
+    ]
+  }
+  if (!Array.isArray(raw) || raw.length === 0) return null
+  if (raw.every((n) => typeof n === 'number')) {
+    const values = raw as number[]
+    if (values.length === 1) {
+      return [
+        { time: 0, value: values[0], envelope: 0 },
+        { time: 1, value: values[0], envelope: 0 },
+      ]
+    }
+    const last = values.length - 1
+    return values.map((value, i) => ({ time: i / last, value, envelope: 0 }))
+  }
+  if (raw.every(isNumberPair)) {
+    return (raw as [number, number][]).map(([time, value]) => ({ time, value, envelope: 0 }))
+  }
+  const objects: NumberKeypoint[] = []
+  for (const entry of raw) {
+    const rec = asRecord(entry)
+    if (!rec || typeof rec.time !== 'number' || typeof rec.value !== 'number') return null
+    objects.push({
+      time: rec.time,
+      value: rec.value,
+      envelope: typeof rec.envelope === 'number' ? rec.envelope : 0,
+    })
+  }
+  return objects
+}
+
+/** [r,g,b], [[r,g,b], [r,g,b]] as a ramp, or explicit [time, [r,g,b]] keypoints. */
+function asColorKeypoints(raw: unknown): ColorKeypoint[] | null {
+  if (isNumberTriple(raw)) {
+    return [
+      { time: 0, color: raw },
+      { time: 1, color: raw },
+    ]
+  }
+  if (!Array.isArray(raw) || raw.length === 0) return null
+  if (raw.every(isNumberTriple)) {
+    const colors = raw as [number, number, number][]
+    if (colors.length === 1) {
+      return [
+        { time: 0, color: colors[0] },
+        { time: 1, color: colors[0] },
+      ]
+    }
+    const last = colors.length - 1
+    return colors.map((color, i) => ({ time: i / last, color }))
+  }
+  const keypoints: ColorKeypoint[] = []
+  for (const entry of raw) {
+    if (Array.isArray(entry) && entry.length === 2 && typeof entry[0] === 'number' && isNumberTriple(entry[1])) {
+      keypoints.push({ time: entry[0], color: entry[1] })
+      continue
+    }
+    const rec = asRecord(entry)
+    if (rec && typeof rec.time === 'number' && isNumberTriple(rec.color)) {
+      keypoints.push({ time: rec.time, color: rec.color })
+      continue
+    }
+    return null
+  }
+  return keypoints
 }
 
 export function instanceLabel(
@@ -217,8 +330,87 @@ function inferProp(
       return num(raw) && Number.isInteger(raw)
         ? { type: 'int', value: raw }
         : reject('give the BrickColor number.')
+    case 'UDim':
+      return isNumberPair(raw) ? { type: 'UDim', value: raw } : reject('give [scale, offset].')
+    case 'UDim2': {
+      const pair = asPairOfPairs(raw)
+      return pair
+        ? { type: 'UDim2', value: pair }
+        : reject('give [xScale, xOffset, yScale, yOffset] — e.g. [0.5, 0, 0, 40] is half the width and 40 pixels tall.')
+    }
+    case 'Vector2':
+      return isNumberPair(raw) ? { type: 'Vector2', value: raw } : reject('give [x, y].')
+    case 'Rect': {
+      const pair = asPairOfPairs(raw)
+      return pair ? { type: 'Rect', value: pair } : reject('give [minX, minY, maxX, maxY].')
+    }
+    case 'NumberRange': {
+      if (num(raw)) return { type: 'NumberRange', value: [raw, raw] }
+      return isNumberPair(raw)
+        ? { type: 'NumberRange', value: raw }
+        : reject('give [min, max], or one number for a fixed value.')
+    }
+    case 'NumberSequence': {
+      const keypoints = asNumberKeypoints(raw)
+      return keypoints
+        ? { type: 'NumberSequence', value: keypoints }
+        : reject('give one number for a constant, [from, to] to fade, or [[time, value], …].')
+    }
+    case 'ColorSequence': {
+      const keypoints = asColorKeypoints(raw)
+      return keypoints
+        ? { type: 'ColorSequence', value: keypoints }
+        : reject('give [r, g, b] for one colour, [[r,g,b], [r,g,b]] to blend, or [[time, [r,g,b]], …].')
+    }
+    case 'Font': {
+      const font = asFont(raw)
+      if (font) return font
+      return reject(
+        `give a font family name such as "${DEFAULT_FONT_FAMILY}", or {"family": "Merriweather", "weight": "Bold"}.`,
+      )
+    }
+    case 'PhysicalProperties': {
+      const physical = asPhysicalProperties(raw)
+      return physical
+        ? physical
+        : reject('give "Default", or {"density": 2, "friction": 0.4, "elasticity": 0.6}.')
+    }
     default:
       return reject('this build cannot set that type yet.')
+  }
+}
+
+/** "BuilderSans" | {family, weight?, style?} -> a Font value. */
+function asFont(raw: unknown): RbxPropValue | null {
+  const familyRaw = typeof raw === 'string' ? raw : asRecord(raw)?.family
+  if (typeof familyRaw !== 'string') return null
+  const family = resolveFontFamily(familyRaw)
+  if (!family) return null
+  const rec = asRecord(raw)
+  const weight = typeof rec?.weight === 'string' ? rec.weight : 'Regular'
+  const style = typeof rec?.style === 'string' ? rec.style : 'Normal'
+  return { type: 'Font', value: { family, weight, style } }
+}
+
+function asPhysicalProperties(raw: unknown): RbxPropValue | null {
+  if (raw === 'Default' || raw === 'default') {
+    return { type: 'PhysicalProperties', value: 'Default' }
+  }
+  const rec = asRecord(raw)
+  if (!rec) return null
+  const pick = (key: string, fallback: number): number =>
+    typeof rec[key] === 'number' && Number.isFinite(rec[key]) ? (rec[key] as number) : fallback
+  if (typeof rec.density !== 'number') return null
+  return {
+    type: 'PhysicalProperties',
+    value: {
+      density: rec.density,
+      friction: pick('friction', 0.3),
+      elasticity: pick('elasticity', 0.5),
+      frictionWeight: pick('frictionWeight', 1),
+      elasticityWeight: pick('elasticityWeight', 1),
+      acousticAbsorption: pick('acousticAbsorption', 1),
+    },
   }
 }
 
@@ -350,9 +542,131 @@ function coerceProp(
       }
       return { type: 'Ref', value: (rec.value as string | null) ?? null }
     }
+    case 'UDim': {
+      if (!isNumberPair(rec.value)) {
+        errors.push(`${where}: property "${propName}" (UDim) needs [scale, offset].`)
+        return null
+      }
+      return { type: 'UDim', value: rec.value }
+    }
+    case 'Vector2': {
+      if (!isNumberPair(rec.value)) {
+        errors.push(`${where}: property "${propName}" (Vector2) needs [x, y].`)
+        return null
+      }
+      return { type: 'Vector2', value: rec.value }
+    }
+    case 'NumberRange': {
+      if (!isNumberPair(rec.value)) {
+        errors.push(`${where}: property "${propName}" (NumberRange) needs [min, max].`)
+        return null
+      }
+      return { type: 'NumberRange', value: rec.value }
+    }
+    case 'UDim2':
+    case 'Rect': {
+      const pair = asPairOfPairs(rec.value)
+      if (!pair) {
+        errors.push(
+          `${where}: property "${propName}" (${type}) needs [[a, b], [c, d]] or the four numbers flat.`,
+        )
+        return null
+      }
+      return { type, value: pair } as RbxPropValue
+    }
+    case 'NumberSequence': {
+      const keypoints = asNumberKeypoints(rec.value)
+      if (!keypoints) {
+        errors.push(
+          `${where}: property "${propName}" (NumberSequence) needs keypoints, e.g. [[0, 1], [1, 0]].`,
+        )
+        return null
+      }
+      return { type: 'NumberSequence', value: keypoints }
+    }
+    case 'ColorSequence': {
+      const keypoints = asColorKeypoints(rec.value)
+      if (!keypoints) {
+        errors.push(
+          `${where}: property "${propName}" (ColorSequence) needs keypoints, e.g. [[0, [1,0,0]], [1, [0,0,1]]].`,
+        )
+        return null
+      }
+      return { type: 'ColorSequence', value: keypoints }
+    }
+    case 'Font': {
+      const font = asFont(rec.value)
+      if (!font) {
+        errors.push(
+          `${where}: property "${propName}" (Font) needs a real Roblox font family, e.g. "${DEFAULT_FONT_FAMILY}".`,
+        )
+        return null
+      }
+      return font
+    }
+    case 'PhysicalProperties': {
+      const physical = asPhysicalProperties(rec.value)
+      if (!physical) {
+        errors.push(
+          `${where}: property "${propName}" (PhysicalProperties) needs "Default" or {"density": …}.`,
+        )
+        return null
+      }
+      return physical
+    }
     default:
       return null
   }
+}
+
+/* ------------------------------------------------------ attributes and tags */
+
+/** Bare JSON attribute value -> RbxAttrValue. Attributes have no dump to consult. */
+function coerceAttrValue(raw: unknown, propName: string, where: string, errors: string[]): RbxAttrValue | null {
+  if (typeof raw === 'string') return { type: 'string', value: raw }
+  if (typeof raw === 'boolean') return { type: 'bool', value: raw }
+  if (typeof raw === 'number' && Number.isFinite(raw)) return { type: 'double', value: raw }
+  if (isNumberTriple(raw)) return { type: 'Vector3', value: raw }
+  const pair = asPairOfPairs(raw)
+  if (pair) return { type: 'UDim2', value: pair }
+  errors.push(
+    `${where}: attribute "${propName}" must be text, a number, true/false, [x, y, z] or a UDim2.`,
+  )
+  return null
+}
+
+function coerceAttributes(
+  raw: unknown,
+  where: string,
+  errors: string[],
+  allowNull: boolean,
+): Record<string, RbxAttrValue | null> | undefined {
+  if (raw === undefined) return undefined
+  const rec = asRecord(raw)
+  if (!rec) {
+    errors.push(`${where}: "attributes" must be an object of attribute name -> value.`)
+    return undefined
+  }
+  const out: Record<string, RbxAttrValue | null> = {}
+  for (const [key, value] of Object.entries(rec)) {
+    if (value === null) {
+      if (allowNull) out[key] = null
+      else errors.push(`${where}: attribute "${key}" cannot be null when creating an instance.`)
+      continue
+    }
+    const coerced = coerceAttrValue(value, key, where, errors)
+    if (coerced) out[key] = coerced
+  }
+  return out
+}
+
+function coerceTags(raw: unknown, where: string, errors: string[]): string[] | undefined {
+  if (raw === undefined) return undefined
+  if (!Array.isArray(raw) || raw.some((t) => typeof t !== 'string')) {
+    errors.push(`${where}: "tags" must be an array of strings, e.g. ["Coin", "Collectible"].`)
+    return undefined
+  }
+  return [...new Set(raw as string[])].filter((t) => t.length > 0)
 }
 
 function coerceProps(
@@ -430,8 +744,21 @@ function buildInstance(
     }
   }
 
+  const attributes = coerceAttributes(rec.attributes, `${where} (${name})`, errors, false) as
+    | Record<string, RbxAttrValue>
+    | undefined
+  const tags = coerceTags(rec.tags, `${where} (${name})`, errors)
+
   if (errors.length > errorsBefore) return null
-  return { id: newId(), className, name, props, children }
+  return {
+    id: newId(),
+    className,
+    name,
+    props,
+    ...(attributes && Object.keys(attributes).length > 0 ? { attributes } : {}),
+    ...(tags && tags.length > 0 ? { tags } : {}),
+    children,
+  }
 }
 
 /* ------------------------------------------------------------- script kinds */
@@ -576,10 +903,25 @@ export function mapToolCall(
         const newName =
           (rec && asString(rec.name)) ??
           (propName && propName.type === 'string' ? propName.value : null)
-        if (Object.keys(props).length > 0) ops.push({ op: 'update', id, props })
+        const attributes = coerceAttributes(rec?.attributes, `updates[${i}]`, errors, true)
+        const tags = coerceTags(rec?.tags, `updates[${i}]`, errors)
+        if (errors.length > errorsBefore) return
+        const touchesAttributes = attributes !== undefined && Object.keys(attributes).length > 0
+        const touchesTags = tags !== undefined
+        if (Object.keys(props).length > 0 || touchesAttributes || touchesTags) {
+          ops.push({
+            op: 'update',
+            id,
+            props,
+            ...(touchesAttributes ? { attributes } : {}),
+            ...(touchesTags ? { tags } : {}),
+          })
+        }
         if (newName) ops.push({ op: 'rename', id, name: newName })
-        if (Object.keys(props).length === 0 && !newName) {
-          errors.push(`updates[${i}]: nothing to change — send "props" and/or "name".`)
+        if (Object.keys(props).length === 0 && !touchesAttributes && !touchesTags && !newName) {
+          errors.push(
+            `updates[${i}]: nothing to change — send "props", "attributes", "tags" and/or "name".`,
+          )
         }
       })
       return {

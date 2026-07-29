@@ -40,7 +40,16 @@ Example 1 — a red anchored block 8x1x8 at (0, 4, 0):
 {"Size":[8,1,8],"CFrame":[0,4,0],"Color":[0.77,0.16,0.11],"Anchored":true}
 Example 2 — a neon green sphere that players pass through:
 {"Shape":"Ball","Material":"Neon","Color":[0.29,0.85,0.39],"CanCollide":false,"Transparency":0.2}
+Screen and surface UI use their own shapes. A UDim2 (every GUI Size and Position) is [xScale, xOffset, yScale, yOffset] — [1, 0, 0, 40] is full width and 40 pixels tall. A UDim (UICorner radius, UIListLayout padding) is [scale, offset]. A Vector2 is [x, y]. A Rect is [minX, minY, maxX, maxY]. A font is a family name string such as "BuilderSans", or {"family": "Merriweather", "weight": "Bold"}.
+Particles and beams take ranges and sequences. A NumberRange is [min, max], or one number. A NumberSequence is one number for a constant, [from, to] to fade, or [[time, value], …] with time from 0 to 1. A ColorSequence is [r, g, b] for one colour, [[r,g,b], [r,g,b]] to blend, or [[time, [r,g,b]], …].
+CustomPhysicalProperties is "Default" or {"density": 2, "friction": 0.4, "elasticity": 0.6}.
+Example 3 — a UI panel half the screen wide, 120 pixels tall, 20 pixels down from the top:
+{"Size":[0.5,0,0,120],"Position":[0.25,0,0,20],"BackgroundColor3":[0.09,0.09,0.11]}
 A value of the wrong shape comes back as an error naming the property and the type it actually is.`
+
+/** Shared prose for the attributes bag and CollectionService tags. */
+const EXTRAS_DOC = `"attributes" is the creator-defined data bag on an instance: {"Points": 5, "Rarity": "gold"}. Values may be text, a number, true/false, [x, y, z] or a UDim2. Scripts read them with instance:GetAttribute("Points"). Use attributes for per-object data instead of hiding numbers in the object's name.
+"tags" are CollectionService tags: ["Coin"]. Scripts collect every tagged object at once with CollectionService:GetTagged("Coin"), which is how you write one script that handles forty coins instead of forty scripts.`
 
 /** One level of the create_instances node, inlined to a fixed depth. */
 function childNode(depth: number): Record<string, unknown> {
@@ -54,6 +63,16 @@ function childNode(depth: number): Record<string, unknown> {
       type: 'object',
       description: PROPS_DOC,
       additionalProperties: true,
+    },
+    attributes: {
+      type: 'object',
+      description: EXTRAS_DOC,
+      additionalProperties: true,
+    },
+    tags: {
+      type: 'array',
+      description: 'CollectionService tags for this instance, e.g. ["Coin"].',
+      items: { type: 'string' },
     },
   }
   if (depth > 0) {
@@ -149,6 +168,16 @@ export const TOOLS: ToolDef[] = [
                 type: 'object',
                 description: `${PROPS_DOC}\nUse null as the value to clear a property.`,
                 additionalProperties: true,
+              },
+              attributes: {
+                type: 'object',
+                description: `${EXTRAS_DOC}\nOnly the attributes you name are touched; use null to remove one.`,
+                additionalProperties: true,
+              },
+              tags: {
+                type: 'array',
+                description: 'Replaces the whole tag set on this instance. Send [] to clear it.',
+                items: { type: 'string' },
               },
             },
             required: ['id'],
