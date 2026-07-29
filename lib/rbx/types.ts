@@ -129,6 +129,8 @@ export interface ProjectMeta {
   name: string
   createdAt: string // ISO 8601
   updatedAt: string
-  /** Publish target; absent until the user connects Roblox. */
+  /** Publish target; auto-assigned from the operator place pool on first publish. */
   roblox?: { universeId?: string; placeId?: string }
+  /** Set after the first successful Open Cloud publish. */
+  lastPublish?: { versionNumber: number; at: string }
 }

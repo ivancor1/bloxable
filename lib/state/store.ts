@@ -10,6 +10,8 @@ import type { ChatEvent, ChatRequest, Thread, ThreadMessage, ThreadSummary } fro
 import { applyPatchOps as applyOps } from '@/lib/rbx/tree'
 import { FREE_DAILY_CREDITS } from '@/lib/config'
 
+export type GizmoMode = 'move' | 'rotate' | 'scale'
+
 export interface AppState {
   projects: ProjectMeta[]
   projectId: string | null
@@ -17,22 +19,34 @@ export interface AppState {
   /** Monotonic counter bumped on every tree change — cheap dirty flag for the viewer. */
   treeVersion: number
   selectionId: string | null
+  /** Active transform-gizmo mode for the selected part. */
+  gizmoMode: GizmoMode
   threads: ThreadSummary[]
   activeThreadId: string | null
   messages: ThreadMessage[]
   streaming: boolean
   credits: { remaining: number; total: number; unlimited: boolean }
+  history: { undo: number; redo: number }
 
   // Pure/client actions (implemented here)
   applyPatchOps(ops: PatchOp[]): void
   select(id: string | null): void
+  setGizmoMode(mode: GizmoMode): void
+  /** Replace one project's meta in the list (publish stamps, assignments). */
+  setProjectMeta(meta: ProjectMeta): void
 
-  // API-backed actions (B5 implements against app/api routes)
+  // API-backed actions
+  /** Fetches projects + credits. Does NOT auto-select — home lists, editor switches. */
   loadInitial(): Promise<void>
-  createProject(name: string): Promise<void>
+  /** Creates and selects a project; returns its id for navigation. */
+  createProject(name: string): Promise<string>
   switchProject(id: string): Promise<void>
   openThread(id: string | null): Promise<void>
   sendMessage(text: string): Promise<void>
+  /** Manual (non-AI) edits: server-validate, persist, one undo step per batch. */
+  applyManualOps(ops: PatchOp[]): Promise<void>
+  undo(): Promise<void>
+  redo(): Promise<void>
 }
 
 // ---------------------------------------------------------------------------
@@ -84,11 +98,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   tree: null,
   treeVersion: 0,
   selectionId: null,
+  gizmoMode: 'move',
   threads: [],
   activeThreadId: null,
   messages: [],
   streaming: false,
   credits: { remaining: 0, total: FREE_DAILY_CREDITS, unlimited: false },
+  history: { undo: 0, redo: 0 },
 
   applyPatchOps(ops) {
     const { tree, treeVersion, selectionId } = get()
@@ -105,6 +121,18 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   select(id) {
     set({ selectionId: id })
+  },
+
+  setGizmoMode(mode) {
+    set({ gizmoMode: mode })
+  },
+
+  setProjectMeta(meta) {
+    set((s) => ({
+      projects: s.projects.some((p) => p.id === meta.id)
+        ? s.projects.map((p) => (p.id === meta.id ? meta : p))
+        : [meta, ...s.projects],
+    }))
   },
 
   async loadInitial() {
@@ -126,11 +154,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       : fallback
 
     set({ projects, credits })
-
-    if (projects.length > 0) {
-      const mostRecent = [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
-      await get().switchProject(mostRecent.id)
-    }
   },
 
   async createProject(name) {
@@ -145,6 +168,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const project = (await readJson(res)) as ProjectMeta
     set({ projects: [project, ...get().projects] })
     await get().switchProject(project.id)
+    return project.id
   },
 
   async switchProject(id) {
@@ -154,7 +178,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!res.ok) {
       throw new Error(await errorMessage(res, 'Could not load project'))
     }
-    const data = (await readJson(res)) as { meta: ProjectMeta; tree: RbxTree; threads: ThreadSummary[] } | null
+    const data = (await readJson(res)) as {
+      meta: ProjectMeta
+      tree: RbxTree
+      threads: ThreadSummary[]
+      history?: { undo: number; redo: number }
+    } | null
     if (!data) throw new Error('Could not load project')
     const { meta, tree, threads } = data
 
@@ -169,6 +198,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       threads,
       activeThreadId: null,
       messages: [],
+      history: data.history ?? { undo: 0, redo: 0 },
     }))
   },
 
@@ -305,8 +335,12 @@ export const useAppStore = create<AppState>((set, get) => ({
               // { meta, tree, threads } together; pull just the refreshed threads.
               const projectRes = await fetch(`/api/projects/${projectId}`)
               if (projectRes.ok) {
-                const data = (await readJson(projectRes)) as { threads?: ThreadSummary[] } | null
+                const data = (await readJson(projectRes)) as {
+                  threads?: ThreadSummary[]
+                  history?: { undo: number; redo: number }
+                } | null
                 if (data?.threads) set({ threads: data.threads })
+                if (data?.history) set({ history: data.history })
               }
               break
             }
@@ -318,5 +352,67 @@ export const useAppStore = create<AppState>((set, get) => ({
     } finally {
       set({ streaming: false })
     }
+  },
+
+  async applyManualOps(ops) {
+    const { projectId } = get()
+    if (!projectId || ops.length === 0) return
+    const res = await fetch(`/api/projects/${projectId}/ops`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ops }),
+    })
+    const data = (await readJson(res)) as {
+      applied?: PatchOp[]
+      errors?: string[]
+      history?: { undo: number; redo: number }
+      error?: string
+    } | null
+    if (!res.ok) {
+      console.warn('[bloxable] manual ops rejected:', data?.error)
+      return
+    }
+    // Server ops are validator-NORMALIZED (enum tokens resolved, numbers retagged) —
+    // re-applying them locally is idempotent over the optimistic drag state and
+    // keeps the client tree byte-identical with what was persisted.
+    if (data?.applied?.length) get().applyPatchOps(data.applied)
+    if (data?.history) set({ history: data.history })
+    if (data?.errors?.length) console.warn('[bloxable] manual ops warnings:', data.errors)
+  },
+
+  async undo() {
+    const { projectId, streaming } = get()
+    if (!projectId || streaming) return
+    const res = await fetch(`/api/projects/${projectId}/undo`, { method: 'POST' })
+    if (!res.ok) return
+    const data = (await readJson(res)) as {
+      tree?: RbxTree
+      history?: { undo: number; redo: number }
+    } | null
+    if (!data?.tree) return
+    set((s) => ({
+      tree: data.tree,
+      treeVersion: s.treeVersion + 1,
+      selectionId: null,
+      history: data.history ?? s.history,
+    }))
+  },
+
+  async redo() {
+    const { projectId, streaming } = get()
+    if (!projectId || streaming) return
+    const res = await fetch(`/api/projects/${projectId}/redo`, { method: 'POST' })
+    if (!res.ok) return
+    const data = (await readJson(res)) as {
+      tree?: RbxTree
+      history?: { undo: number; redo: number }
+    } | null
+    if (!data?.tree) return
+    set((s) => ({
+      tree: data.tree,
+      treeVersion: s.treeVersion + 1,
+      selectionId: null,
+      history: data.history ?? s.history,
+    }))
   },
 }))

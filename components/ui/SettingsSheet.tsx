@@ -2,13 +2,28 @@
 
 import { useEffect, useState } from 'react'
 import { useAppStore } from '@/lib/state/store'
-import type { ProjectMeta } from '@/lib/rbx/types'
 import { IconClose } from './icons'
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null
 }
 
+interface ConnectResult {
+  connected: boolean
+  universeId: string | null
+  places: { id: string; name: string }[]
+  candidates: { universeId: string; placeCount: number }[]
+  expiresAt: string | null
+  blocked: string | null
+}
+
+/**
+ * Operator configuration, one field deep. The API key already knows which
+ * universes it can publish to and place lists are public, so Connect derives
+ * everything else — nobody copies IDs out of a dashboard (see
+ * lib/roblox/discover.ts). Manual entry survives behind Advanced for the
+ * all-universes-scoped key case.
+ */
 export default function SettingsSheet({ onClose }: { onClose: () => void }) {
   const projectId = useAppStore((s) => s.projectId)
   const projects = useAppStore((s) => s.projects)
@@ -17,19 +32,29 @@ export default function SettingsSheet({ onClose }: { onClose: () => void }) {
   const [hasKey, setHasKey] = useState(false)
   const [masked, setMasked] = useState<string | null>(null)
   const [apiKeyInput, setApiKeyInput] = useState('')
-  const [universeId, setUniverseId] = useState(project?.roblox?.universeId ?? '')
-  const [placeId, setPlaceId] = useState(project?.roblox?.placeId ?? '')
-  const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [universeId, setUniverseId] = useState('')
+  const [placeCount, setPlaceCount] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<ConnectResult | null>(null)
+  const [manualUniverse, setManualUniverse] = useState('')
+  const [manualPlaces, setManualPlaces] = useState('')
 
   useEffect(() => {
     fetch('/api/settings')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        setHasKey(!!(isRecord(data) && data.hasKey))
-        setMasked(isRecord(data) && typeof data.masked === 'string' ? data.masked : null)
+        if (!isRecord(data)) return
+        setHasKey(data.hasKey === true)
+        setMasked(typeof data.masked === 'string' ? data.masked : null)
+        const uid = typeof data.universeId === 'string' ? data.universeId : ''
+        setUniverseId(uid)
+        setManualUniverse(uid)
+        const pool = Array.isArray(data.placePool) ? (data.placePool as string[]) : []
+        setPlaceCount(pool.length)
+        setManualPlaces(pool.join(', '))
       })
-      .catch(() => setHasKey(false))
+      .catch(() => undefined)
   }, [])
 
   useEffect(() => {
@@ -40,66 +65,71 @@ export default function SettingsSheet({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  async function saveKey() {
-    const key = apiKeyInput.trim()
-    if (!key) return
-    // app/api/settings/route.ts only exposes GET and PUT.
-    const res = await fetch('/api/settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ robloxApiKey: key }),
-    })
-    if (res.ok) {
-      setApiKeyInput('')
-      const data = await res.json().catch(() => null)
-      setHasKey(!!(isRecord(data) && data.hasKey))
-      setMasked(isRecord(data) && typeof data.masked === 'string' ? data.masked : null)
-    }
-  }
-
-  async function saveIds(next: { universeId: string; placeId: string }) {
-    if (!projectId) return
-    const res = await fetch(`/api/projects/${projectId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ roblox: { universeId: next.universeId, placeId: next.placeId } }),
-    })
-    if (!res.ok) return
-    const updated = (await res.json().catch(() => null)) as ProjectMeta | null
-    useAppStore.setState((s) => ({
-      projects: s.projects.map((p) =>
-        p.id === projectId
-          ? updated ?? { ...p, roblox: { universeId: next.universeId, placeId: next.placeId } }
-          : p,
-      ),
-    }))
-  }
-
-  async function testConnection() {
-    setTesting(true)
-    setTestResult(null)
+  async function connect(pinUniverse?: string) {
+    if (busy) return
+    setBusy(true)
+    setError(null)
     try {
-      const res = await fetch('/api/settings/test', { method: 'POST' })
-      const data: unknown = await res.json().catch(() => null)
+      const res = await fetch('/api/settings/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...(apiKeyInput.trim() ? { apiKey: apiKeyInput.trim() } : {}),
+          ...(pinUniverse ? { universeId: pinUniverse } : {}),
+        }),
+      })
+      const data = await res.json().catch(() => null)
       if (!res.ok) {
-        const message = isRecord(data) && typeof data.error === 'string' ? data.error : `Failed (${res.status})`
-        setTestResult({ ok: false, message })
+        setError(isRecord(data) && typeof data.error === 'string' ? data.error : `Failed (${res.status})`)
         return
       }
-      // Real introspect result (app/api/settings/test/route.ts): render the
-      // actual returned fields, not invented status prose.
-      const enabled = isRecord(data) && data.enabled === true
-      const expired = isRecord(data) && data.expired === true
-      const universeIds = isRecord(data) && Array.isArray(data.universeIds) ? (data.universeIds as string[]) : []
-      const bits = [expired ? 'Expired' : enabled ? 'Enabled' : 'Disabled']
-      bits.push(`${universeIds.length} universe${universeIds.length === 1 ? '' : 's'}`)
-      setTestResult({ ok: enabled && !expired, message: bits.join(' · ') })
+      const r = data as ConnectResult
+      setResult(r)
+      setApiKeyInput('')
+      setHasKey(true)
+      if (r.universeId) {
+        setUniverseId(r.universeId)
+        setManualUniverse(r.universeId)
+      }
+      setPlaceCount(r.places.length)
+      setManualPlaces(r.places.map((p) => p.id).join(', '))
+      if (r.blocked) setError(r.blocked)
+      const settings = await fetch('/api/settings').then((x) => (x.ok ? x.json() : null))
+      if (isRecord(settings) && typeof settings.masked === 'string') setMasked(settings.masked)
     } catch (e) {
-      setTestResult({ ok: false, message: e instanceof Error ? e.message : 'Connection failed' })
+      setError(e instanceof Error ? e.message : 'Connection failed')
     } finally {
-      setTesting(false)
+      setBusy(false)
     }
   }
+
+  async function saveManual() {
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          universeId: manualUniverse.trim(),
+          placePool: manualPlaces.split(',').map((p) => p.trim()).filter(Boolean),
+        }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        setError(isRecord(data) && typeof data.error === 'string' ? data.error : 'Could not save')
+        return
+      }
+      if (isRecord(data)) {
+        setUniverseId(typeof data.universeId === 'string' ? data.universeId : '')
+        setPlaceCount(Array.isArray(data.placePool) ? data.placePool.length : 0)
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const connected = !!universeId && placeCount > 0
 
   return (
     <>
@@ -119,46 +149,85 @@ export default function SettingsSheet({ onClose }: { onClose: () => void }) {
               type="password"
               value={apiKeyInput}
               onChange={(e) => setApiKeyInput(e.target.value)}
-              onBlur={saveKey}
-              placeholder={hasKey ? masked ?? '••••••••' : ''}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void connect()
+              }}
+              placeholder={hasKey ? masked ?? '••••••••' : 'Paste your Open Cloud key'}
+              disabled={busy}
             />
           </div>
 
-          <div className="field-row">
-            <div className="field">
-              <label htmlFor="universe-id">Universe ID</label>
-              <input
-                id="universe-id"
-                value={universeId}
-                onChange={(e) => setUniverseId(e.target.value)}
-                onBlur={() => saveIds({ universeId, placeId })}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="place-id">Place ID</label>
-              <input
-                id="place-id"
-                value={placeId}
-                onChange={(e) => setPlaceId(e.target.value)}
-                onBlur={() => saveIds({ universeId, placeId })}
-              />
-            </div>
-          </div>
-
-          <button className="btn" onClick={testConnection} disabled={testing}>
-            {testing ? 'Testing…' : 'Test connection'}
+          <button
+            className="btn btn-accent"
+            onClick={() => void connect()}
+            disabled={busy || (!apiKeyInput.trim() && !hasKey)}
+          >
+            {busy ? 'Connecting…' : connected ? 'Reconnect' : 'Connect'}
           </button>
-          {testResult && (
-            <p className={`test-result ${testResult.ok ? 'ok' : 'err'}`}>{testResult.message}</p>
+
+          {error && <p className="test-result err">{error}</p>}
+
+          {connected && (
+            <div className="conn-status">
+              <span className="conn-dot" />
+              Connected — experience {universeId}, {placeCount} place{placeCount === 1 ? '' : 's'}
+              {result?.expiresAt ? ` · key expires ${new Date(result.expiresAt).toLocaleDateString()}` : ''}
+            </div>
+          )}
+
+          {result && result.candidates.length > 1 && (
+            <div className="field" style={{ marginTop: 14 }}>
+              <label>Experience</label>
+              {result.candidates.map((c) => (
+                <button
+                  key={c.universeId}
+                  className={`switcher-menu-item${c.universeId === universeId ? ' active' : ''}`}
+                  onClick={() => void connect(c.universeId)}
+                  disabled={busy}
+                >
+                  {c.universeId} · {c.placeCount} place{c.placeCount === 1 ? '' : 's'}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {project?.roblox?.placeId && (
+            <p className="settings-footer">This game publishes to place {project.roblox.placeId}.</p>
           )}
 
           <details className="disclosure">
-            <summary>Where do I find these?</summary>
+            <summary>First time? One-time setup</summary>
             <div className="disclosure-body">
-              <p>One-time setup — Roblox can&apos;t create an experience by API:</p>
-              <p>1. In Roblox Studio: File -&gt; Publish to Roblox (a Baseplate is fine). After this, Studio isn&apos;t needed again.</p>
-              <p>2. At create.roblox.com/dashboard/creations: hover your experience -&gt; the three-dot menu -&gt; Copy Universe ID. Open it -&gt; Places -&gt; the Place ID is in the URL.</p>
-              <p>3. At create.roblox.com/dashboard/credentials: Create API Key -&gt; add &apos;universe-places&apos; -&gt; select your experience -&gt; Write -&gt; paste the key here. It stays on this machine. Keys expire after 60 days unused.</p>
+              <p>Roblox has no API that can create an experience, so it starts in Studio — once, ever:</p>
+              <p>1. Roblox Studio → File → Publish to Roblox (an empty Baseplate is fine). Add a few extra places to that same experience if you want to host several games.</p>
+              <p>2. create.roblox.com/dashboard/credentials → Create API Key → add the <strong>universe-places</strong> system → select your experience → add the <strong>Write</strong> operation → copy the key.</p>
+              <p>3. Paste it above and hit Connect. The experience and its places are read from the key — nothing else to copy.</p>
+              <p>Keys expire after 60 days unused. You can also set ROBLOX_API_KEY in .env.local instead of pasting.</p>
+            </div>
+          </details>
+
+          <details className="disclosure">
+            <summary>Advanced — set IDs manually</summary>
+            <div className="disclosure-body">
+              <p>Only needed if your key is scoped to all universes, so we can&apos;t tell which one to use.</p>
+              <div className="field">
+                <label htmlFor="universe-id">Universe ID</label>
+                <input
+                  id="universe-id"
+                  value={manualUniverse}
+                  onChange={(e) => setManualUniverse(e.target.value)}
+                  onBlur={saveManual}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="place-pool">Places (comma-separated IDs)</label>
+                <input
+                  id="place-pool"
+                  value={manualPlaces}
+                  onChange={(e) => setManualPlaces(e.target.value)}
+                  onBlur={saveManual}
+                />
+              </div>
             </div>
           </details>
 

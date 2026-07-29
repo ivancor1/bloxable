@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 
+import { detailMapsFor, studsTexture } from './proceduralTextures'
+
 // Cached MeshStandardMaterial keyed by (Color, Material, Transparency, Reflectance).
 //
 // The roughness/metalness table below is RESEARCH Part 3's "Original (non-Roblox-
@@ -80,13 +82,20 @@ function paramsFor(materialName: string | undefined): MaterialParams {
 
 const materialCache = new Map<string, THREE.MeshStandardMaterial>()
 
+/**
+ * `repeat` > 0 opts into the procedural detail maps (proceduralTextures.ts) at
+ * that tiling bucket; pass 0 for geometries without UVs (wedges) or headless
+ * environments. Detail is a multiply over the part Color, so palettes hold.
+ */
 export function getCachedMaterial(
   color: readonly [number, number, number],
   materialName: string | undefined,
   transparency: number,
   reflectance: number,
+  repeat = 0,
 ): THREE.MeshStandardMaterial {
-  const key = `${color[0].toFixed(4)},${color[1].toFixed(4)},${color[2].toFixed(4)}|${materialName ?? 'Plastic'}|${transparency.toFixed(3)}|${reflectance.toFixed(3)}`
+  const detail = repeat > 0 ? detailMapsFor(materialName, repeat) : null
+  const key = `${color[0].toFixed(4)},${color[1].toFixed(4)},${color[2].toFixed(4)}|${materialName ?? 'Plastic'}|${transparency.toFixed(3)}|${reflectance.toFixed(3)}|${detail ? repeat : 0}`
   const cached = materialCache.get(key)
   if (cached) return cached
 
@@ -96,6 +105,12 @@ export function getCachedMaterial(
     roughness: params.roughness,
     metalness: params.metalness,
   })
+
+  if (detail) {
+    mat.map = detail.map
+    mat.bumpMap = detail.bumpMap
+    mat.bumpScale = detail.bumpScale
+  }
 
   // BasePart.Reflectance [0,1] -> envMapIntensity-style approximation (brief D7 /
   // RESEARCH Part 3: not literal mirror reflectivity, no env map is bound in v1 so
@@ -124,12 +139,44 @@ export function getCachedMaterial(
   return mat
 }
 
+/**
+ * Six-slot material array for a block part whose top face carries the classic
+ * stud grid (the Baseplate's Texture child). BoxGeometry's material groups are
+ * ordered +x,-x,+y,-y,+z,-z — index 2 is the top. The stud texture becomes the
+ * top face's map (multiplied by the part color, like the real translucent
+ * overlay reads against the gray plate).
+ */
+const studdedSetCache = new Map<string, THREE.Material[]>()
+
+export function getStuddedTopMaterials(
+  color: readonly [number, number, number],
+  materialName: string | undefined,
+  transparency: number,
+  reflectance: number,
+  repeat: number,
+): THREE.Material[] | null {
+  const studs = studsTexture(repeat)
+  if (!studs) return null
+  const key = `${color.join(',')}|${materialName ?? 'Plastic'}|${transparency.toFixed(3)}|${reflectance.toFixed(3)}|${repeat}`
+  const cached = studdedSetCache.get(key)
+  if (cached) return cached
+
+  const base = getCachedMaterial(color, materialName, transparency, reflectance, 0)
+  const top = base.clone()
+  top.map = studs
+  top.needsUpdate = true
+  const set = [base, base, top, base, base, base]
+  studdedSetCache.set(key, set)
+  return set
+}
+
 // Selection highlight: a single shared unlit BackSide material (RESEARCH Part 3's
-// recommended object-space outline-mesh technique, DESIGN.md accent #FF5A47). Only
-// one instance is ever selected at a time (AppState.selectionId is a single id), so
-// one shared mesh+material suffices -- see sceneSync.ts.
+// recommended object-space outline-mesh technique; DESIGN.md accent — the light
+// system's indigo #2C4FF0). Only one instance is ever selected at a time
+// (AppState.selectionId is a single id), so one shared mesh+material suffices --
+// see sceneSync.ts.
 export const outlineMaterial = new THREE.MeshBasicMaterial({
-  color: 0xff5a47,
+  color: 0x2c4ff0,
   side: THREE.BackSide,
   toneMapped: false,
   depthWrite: true,

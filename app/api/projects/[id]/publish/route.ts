@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { promises as fs } from 'node:fs'
 import { buildPlace } from '@/lib/rbx/build'
-import { getProject, getSettings } from '@/lib/store'
+import { assignPlaceFromPool, getProject, getSettings, saveSettings, updateProject } from '@/lib/store'
+import { discover, RobloxError } from '@/lib/roblox/discover'
 import { PUBLISH_SIZE_LIMIT, PUBLISH_SIZE_WARN } from '@/lib/config'
 import { errorResponse, jsonError } from '@/app/api/_lib/http'
 
@@ -42,15 +43,48 @@ export async function POST(
     return errorResponse(err)
   }
 
-  const universeId = meta.roblox?.universeId
-  const placeId = meta.roblox?.placeId
-  if (!universeId || !placeId) {
-    return jsonError('Connect a Roblox universe and place first — open Settings.', 400)
-  }
-
-  const { robloxApiKey } = await getSettings()
+  const settings = await getSettings()
+  const robloxApiKey = settings.robloxApiKey
   if (!robloxApiKey) {
     return jsonError('Add your Roblox API key in Settings before publishing.', 400)
+  }
+
+  // A project without a target gets one assigned from the operator place pool —
+  // the Lovable model: the user never picks a universe, they just hit Publish.
+  let universeId = meta.roblox?.universeId
+  let placeId = meta.roblox?.placeId
+  if (!universeId || !placeId) {
+    // Nothing configured yet? Derive it from the key rather than making anyone
+    // copy IDs out of a dashboard (RESEARCH Part 1 Q4 — the key names its own
+    // universes, and place lists are public).
+    if (!settings.universeId || settings.placePool.length === 0) {
+      try {
+        const found = await discover(robloxApiKey)
+        if (found.universeId && found.places.length > 0) {
+          await saveSettings({
+            universeId: found.universeId,
+            placePool: found.places.map((p) => p.id),
+          })
+        } else if (found.blocked) {
+          return jsonError(found.blocked, 400)
+        }
+      } catch (err) {
+        if (err instanceof RobloxError) return jsonError(err.message, err.status)
+        return errorResponse(err)
+      }
+    }
+    const assigned = await assignPlaceFromPool(id)
+    if (assigned) {
+      universeId = assigned.universeId
+      placeId = assigned.placeId
+      meta = await getProject(id)
+    }
+  }
+  if (!universeId || !placeId) {
+    return jsonError(
+      'Every place in your experience is already taken — add another place in Studio, then reconnect in Settings.',
+      400
+    )
   }
 
   let filePath: string
@@ -110,8 +144,19 @@ export async function POST(
     return jsonError(`Unexpected response from Roblox: ${text}`, 502)
   }
 
+  let updatedMeta = meta
+  try {
+    updatedMeta = await updateProject(id, {
+      lastPublish: { versionNumber: parsed.versionNumber, at: new Date().toISOString() },
+    })
+  } catch {
+    // The publish itself succeeded; a failed meta stamp must not fail the request.
+  }
+
   return NextResponse.json({
     versionNumber: parsed.versionNumber,
     warnLarge: bytes >= PUBLISH_SIZE_WARN,
+    playUrl: `https://www.roblox.com/games/start?placeId=${placeId}`,
+    meta: updatedMeta,
   })
 }

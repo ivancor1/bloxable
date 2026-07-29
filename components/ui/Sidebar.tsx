@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/lib/state/store'
 import type { RbxInstance } from '@/lib/rbx/types'
 import { IconChevronDown, IconPlus } from './icons'
@@ -8,9 +9,9 @@ import { isScriptInstance, scriptDisplayName } from './scriptDisplay'
 import { relativeTime } from './relativeTime'
 
 function ProjectSwitcher() {
+  const router = useRouter()
   const projects = useAppStore((s) => s.projects)
   const projectId = useAppStore((s) => s.projectId)
-  const switchProject = useAppStore((s) => s.switchProject)
   const createProject = useAppStore((s) => s.createProject)
 
   const [open, setOpen] = useState(false)
@@ -25,7 +26,8 @@ function ProjectSwitcher() {
     setName('')
     setNewMode(false)
     setOpen(false)
-    await createProject(trimmed)
+    const id = await createProject(trimmed)
+    router.push(`/p/${id}`)
   }
 
   return (
@@ -36,13 +38,23 @@ function ProjectSwitcher() {
       </button>
       {open && (
         <div className="switcher-menu">
+          <button
+            className="switcher-menu-item"
+            onClick={() => {
+              setOpen(false)
+              router.push('/')
+            }}
+          >
+            ← All projects
+          </button>
+          <div className="switcher-menu-sep" />
           {projects.map((p) => (
             <button
               key={p.id}
               className={`switcher-menu-item${p.id === projectId ? ' active' : ''}`}
               onClick={() => {
                 setOpen(false)
-                if (p.id !== projectId) switchProject(p.id)
+                if (p.id !== projectId) router.push(`/p/${p.id}`)
               }}
             >
               {p.name}

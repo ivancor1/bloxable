@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import type { ProjectMeta } from '@/lib/rbx/types'
 import { useAppStore } from '@/lib/state/store'
-import { IconGear } from './icons'
+import { IconGear, IconRedo, IconUndo } from './icons'
 
 type Toast = { kind: 'ok' | 'err'; text: string; href?: string }
 
@@ -30,6 +31,10 @@ export default function Topbar({
   const projects = useAppStore((s) => s.projects)
   const projectId = useAppStore((s) => s.projectId)
   const credits = useAppStore((s) => s.credits)
+  const history = useAppStore((s) => s.history)
+  const undo = useAppStore((s) => s.undo)
+  const redo = useAppStore((s) => s.redo)
+  const setProjectMeta = useAppStore((s) => s.setProjectMeta)
 
   const project = projects.find((p) => p.id === projectId)
   const [publishing, setPublishing] = useState(false)
@@ -51,17 +56,25 @@ export default function Topbar({
   async function handlePublish() {
     if (!projectId || publishing) return
 
-    const hasIds = !!(project?.roblox?.universeId && project?.roblox?.placeId)
-    let hasKey = false
+    // The place is auto-assigned from the operator pool server-side; the only
+    // hard pre-flight is the key + a configured universe.
+    let configured = false
     try {
       const settingsRes = await fetch('/api/settings')
       const settings = settingsRes.ok ? await settingsRes.json() : null
-      hasKey = !!(isRecord(settings) && settings.hasKey)
+      const hasIds = !!(project?.roblox?.universeId && project?.roblox?.placeId)
+      configured =
+        isRecord(settings) &&
+        settings.hasKey === true &&
+        (hasIds ||
+          (typeof settings.universeId === 'string' &&
+            Array.isArray(settings.placePool) &&
+            settings.placePool.length > 0))
     } catch {
-      hasKey = false
+      configured = false
     }
 
-    if (!hasIds || !hasKey) {
+    if (!configured) {
       onOpenSettings()
       return
     }
@@ -74,11 +87,12 @@ export default function Topbar({
         showToast({ kind: 'err', text: extractMessage(data, 'Publish failed') })
       } else {
         const versionNumber = isRecord(data) && typeof data.versionNumber === 'number' ? data.versionNumber : undefined
-        const placeId = project?.roblox?.placeId
+        const playUrl = isRecord(data) && typeof data.playUrl === 'string' ? data.playUrl : undefined
+        if (isRecord(data) && isRecord(data.meta)) setProjectMeta(data.meta as unknown as ProjectMeta)
         showToast({
           kind: 'ok',
           text: versionNumber !== undefined ? `Live — version ${versionNumber}` : 'Live',
-          href: placeId ? `https://www.roblox.com/games/start?placeId=${placeId}` : undefined,
+          href: playUrl,
         })
       }
     } catch (e) {
@@ -88,11 +102,37 @@ export default function Topbar({
     }
   }
 
+  const playUrl =
+    project?.lastPublish && project.roblox?.placeId
+      ? `https://www.roblox.com/games/start?placeId=${project.roblox.placeId}`
+      : undefined
+
   return (
     <div className="topbar">
       <span className="topbar-project">{project?.name ?? ''}</span>
       <div className="topbar-right">
+        <button
+          className="icon-btn"
+          aria-label="Undo"
+          onClick={() => void undo()}
+          disabled={history.undo === 0}
+        >
+          <IconUndo />
+        </button>
+        <button
+          className="icon-btn"
+          aria-label="Redo"
+          onClick={() => void redo()}
+          disabled={history.redo === 0}
+        >
+          <IconRedo />
+        </button>
         {!credits.unlimited && <span className="credits-pill">{credits.remaining} left</span>}
+        {playUrl && (
+          <a className="btn btn-plain" href={playUrl} target="_blank" rel="noopener noreferrer">
+            Play
+          </a>
+        )}
         {projectId && (
           <a className="btn btn-plain" href={`/api/projects/${projectId}/export`}>
             Export

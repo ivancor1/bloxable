@@ -17,6 +17,7 @@ import {
   getProject,
   getThread,
   getTree,
+  pushHistory,
   saveThread,
   saveTree,
   spendCredit,
@@ -161,6 +162,7 @@ export async function runChat(
 
   // ---- the loop ----------------------------------------------------------
   const chips: string[] = []
+  let turnSnapshotted = false
   let assistantText = ''
   let round = 0
   let exhausted = false
@@ -217,6 +219,16 @@ export async function runChat(
         const validated = validateOps(reflection, tree, mapped.ops)
         errors.push(...validated.errors)
         if (validated.ok.length > 0) {
+          // One undo step per user turn: snapshot the pre-turn tree exactly once,
+          // right before the turn's first applied mutation.
+          if (!turnSnapshotted) {
+            turnSnapshotted = true
+            try {
+              await pushHistory(req.projectId, tree)
+            } catch (err) {
+              console.warn('[bloxable] history snapshot failed:', errorMessage(err))
+            }
+          }
           const result = applyPatchOps(tree, validated.ok)
           errors.push(...result.errors)
           tree = result.tree

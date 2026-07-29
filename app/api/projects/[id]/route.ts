@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getProject, getTree, listThreads, updateProject } from '@/lib/store'
+import { getHistoryCounts, getProject, getTree, listThreads, updateProject } from '@/lib/store'
 import { errorResponse, jsonError } from '@/app/api/_lib/http'
 
 export const dynamic = 'force-dynamic'
@@ -11,12 +11,13 @@ export async function GET(
 ) {
   const { id } = await params
   try {
-    const [meta, tree, threads] = await Promise.all([
+    const [meta, tree, threads, history] = await Promise.all([
       getProject(id),
       getTree(id),
       listThreads(id),
+      getHistoryCounts(id),
     ])
-    return NextResponse.json({ meta, tree, threads })
+    return NextResponse.json({ meta, tree, threads, history })
   } catch (err) {
     return errorResponse(err)
   }

@@ -19,9 +19,15 @@ The chat loop runs on either provider, chosen by whichever key is in `.env.local
 
 `npm run test:engine` builds a place with the real toolchain and verifies it by deserializing with Lune. `npm run test:ai` checks the chat tool layer against the real API dump: bare property values are typed from the dump, wrong ones are rejected by name.
 
-## Publish
+## Publish — the hosted-universe model
 
-Publishing needs a one-time Roblox setup, because **no Roblox API can create an experience**. The exact three steps live in the app: gear icon → "Where do I find these?". In short: publish a place once from Studio (File → Publish to Roblox), copy the Universe ID and Place ID from your creations dashboard, then mint an Open Cloud API key with `universe-places` Write scope for that experience and paste it into the settings sheet. After that Studio is never needed again — Bloxable updates the place directly.
+Bloxable follows the Lovable shape (STRATEGY.md): projects publish into places inside **one operator-owned universe**, and each project is auto-assigned a free place on its first Publish — end users never see an ID, a key, or Studio.
+
+Operator setup is **one field**: paste an Open Cloud API key (or set `ROBLOX_API_KEY` in `.env.local`) and hit Connect. The universe and its places are derived from the key itself — introspection reports which experiences the key may publish to, and place lists are a public endpoint — so nothing is copied out of the creator dashboard. Publish also runs that discovery automatically if settings are empty, meaning a key alone is enough.
+
+The only unavoidable manual step is creating the experience, because **no Roblox API can create one**: in Studio, File → Publish to Roblox on an empty Baseplate, once ever (add extra places there if you want to host several games). Then mint a key with the `universe-places` system + Write operation.
+
+`npm run setup:universe -- --universe <id>` does the same discovery from the CLI, and `npm run mint:place` is the standing experiment for refilling the pool via the Luau Execution API (`AssetService:CreatePlaceAsync`) — unverified until run against a real key.
 
 The key is stored server-side in `data/settings.json` and never sent to the browser (the settings sheet only ever shows the last 4 characters).
 
@@ -30,9 +36,11 @@ The key is stored server-side in `data/settings.json` and never sent to the brow
 - Projects persisted on disk under `data/` (atomic writes), seeded from the real Studio Baseplate template.
 - Chat → tool-use loop → validated `PatchOp`s → live tree, viewer and file list updates over SSE.
 - Every op checked against the official API dump: class exists, property exists, enum name resolved to its token.
-- `.rbxlx` export (always available) and Open Cloud publish.
-- 3D preview: parts, wedges, cylinders, spheres, BrickColors, materials, lighting and fog read from the real tree.
-- 25 free messages/day, enforced server-side.
+- **Direct manipulation**: select a part → Move/Rotate/Scale gizmo (1-stud / 15° snapping), validated and persisted through the same op pipeline as the AI.
+- **Undo/redo**: Cmd+Z / Shift+Cmd+Z (and topbar buttons) — one step per chat turn or drag, 30 steps per project, server-side snapshots.
+- `.rbxlx` export (always available) and Open Cloud publish with place auto-assignment + play link.
+- 3D preview: parts, wedges, cylinders, spheres, BrickColors, procedural material detail (wood grain, brick, concrete, grass, metal…), the classic stud-grid baseplate, screen UI, lighting and fog — all read from the real tree.
+- 25 free messages/day, enforced server-side (currently disabled via `UNLIMITED_CREDITS`).
 
 ## Known limitations
 

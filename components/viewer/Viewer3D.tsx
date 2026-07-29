@@ -8,6 +8,7 @@ import { SceneSync } from './sceneSync'
 import { createLightingRig, readLightingConfig, updateLightingRig, applyFog } from './lighting'
 import { createSky, updateSkyPosition } from './sky'
 import { createFlyControls } from './flyControls'
+import { createTransformGizmo } from './transformGizmo'
 import GuiOverlay from './GuiOverlay'
 
 // A left-click shorter/tighter than this counts as a "click" (select); anything
@@ -76,6 +77,7 @@ export default function Viewer3D() {
 
     let flySpeed = 40
     const flyControls = createFlyControls(camera, renderer.domElement, controls, () => flySpeed)
+    const gizmo = createTransformGizmo(camera, renderer.domElement, scene, controls)
 
     // --- resize (canvas fills its container; ResizeObserver-driven) -------
     function resize() {
@@ -108,6 +110,7 @@ export default function Viewer3D() {
 
     function onPointerUp(event: PointerEvent) {
       if (downButton !== 0 || event.button !== 0) return
+      if (gizmo.active) return // interacting with a transform handle, not selecting
       const moved = Math.hypot(event.clientX - downX, event.clientY - downY)
       const elapsed = performance.now() - downAt
       if (moved > CLICK_MAX_DRAG_PX || elapsed > CLICK_MAX_DURATION_MS) return
@@ -143,19 +146,24 @@ export default function Viewer3D() {
       applyFog(scene, lightingConfig)
 
       sceneSync.setSelection(useAppStore.getState().selectionId)
+      gizmo.update()
     }
     syncFromStore()
 
     let lastTreeVersion = useAppStore.getState().treeVersion
     let lastSelectionId = useAppStore.getState().selectionId
+    let lastGizmoMode = useAppStore.getState().gizmoMode
     const unsubscribe = useAppStore.subscribe((state) => {
       if (state.treeVersion !== lastTreeVersion) {
         lastTreeVersion = state.treeVersion
         lastSelectionId = state.selectionId
+        lastGizmoMode = state.gizmoMode
         syncFromStore()
-      } else if (state.selectionId !== lastSelectionId) {
+      } else if (state.selectionId !== lastSelectionId || state.gizmoMode !== lastGizmoMode) {
         lastSelectionId = state.selectionId
+        lastGizmoMode = state.gizmoMode
         sceneSync.setSelection(state.selectionId)
+        gizmo.update()
       }
     })
 
@@ -176,6 +184,7 @@ export default function Viewer3D() {
       cancelAnimationFrame(frameId)
       resizeObserver.disconnect()
       unsubscribe()
+      gizmo.dispose()
       flyControls.dispose()
       controls.dispose()
       renderer.domElement.removeEventListener('pointerdown', onPointerDown)

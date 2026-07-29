@@ -8,7 +8,8 @@ import {
   spawnTopMarkerGeometry,
   type PartKind,
 } from './geometry'
-import { getCachedMaterial, outlineMaterial, spawnMarkerMaterial } from './materials'
+import { getCachedMaterial, getStuddedTopMaterials, outlineMaterial, spawnMarkerMaterial } from './materials'
+import { repeatBucketFor } from './proceduralTextures'
 import {
   cframeToMatrix4,
   getBool,
@@ -67,6 +68,17 @@ function partKindForInstance(inst: RbxInstance, previous?: PartKind): PartKind {
   }
 }
 
+/** The Baseplate's stud-grid texture asset (RESEARCH Part 2 — verified template value). */
+const STUD_TEXTURE_ASSET = '6372755229'
+
+function hasStudTextureChild(inst: RbxInstance): boolean {
+  return inst.children.some((c) => {
+    if (c.className !== 'Texture') return false
+    const tex = c.props.Texture ?? c.props.TextureContent
+    return !!tex && 'value' in tex && typeof tex.value === 'string' && tex.value.includes(STUD_TEXTURE_ASSET)
+  })
+}
+
 /** Cheap change-detection signature covering every prop this module reads. Recomputed
  *  once per instance per sync() pass; when unchanged, the entry's visuals are left
  *  untouched (the actual diff-sync -- see SceneSync.refreshEntry). */
@@ -89,6 +101,7 @@ function computeSig(inst: RbxInstance): string {
   return JSON.stringify([
     cf.pos, cf.rot, size, color, material, shape, transparency, reflectance,
     enabled, brightness, range, angle, face, lightColor, shadows,
+    hasStudTextureChild(inst),
   ])
 }
 
@@ -329,7 +342,19 @@ export class SceneSync {
       const materialName = getToken(inst, 'Material')?.itemName
       const transparency = getFloat(inst, 'Transparency', 0)
       const reflectance = getFloat(inst, 'Reflectance', 0)
-      mesh.material = getCachedMaterial(color, materialName, transparency, reflectance)
+
+      // Detail maps need UVs — the hand-authored wedge geometries have none.
+      const hasUVs = kind === 'block' || kind === 'ball' || kind === 'cylinder' || kind === 'truss'
+      const repeat = hasUVs ? repeatBucketFor(size) : 0
+
+      // The classic stud grid: a child Texture instance carrying the Baseplate's
+      // stud asset puts the studded look on the top face (drawn procedurally —
+      // asset fetch needs Open Cloud auth, RESEARCH Part 3).
+      const studTop =
+        kind === 'block' && hasStudTextureChild(inst)
+          ? getStuddedTopMaterials(color, materialName, transparency, reflectance, repeat)
+          : null
+      mesh.material = studTop ?? getCachedMaterial(color, materialName, transparency, reflectance, repeat)
     } else if (entry.kind === 'light') {
       this.applyLightVisuals(entry, inst)
     }

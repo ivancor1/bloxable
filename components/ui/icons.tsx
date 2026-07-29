@@ -32,6 +32,34 @@ export function IconClose({ className }: { className?: string }) {
   )
 }
 
+export function IconUndo({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path
+        d="M4.8 2.5L2.2 5l2.6 2.5M2.6 5h5.6a3.3 3.3 0 010 6.6H5.4"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+export function IconRedo({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path
+        d="M9.2 2.5L11.8 5 9.2 7.5M11.4 5H5.8a3.3 3.3 0 000 6.6h2.8"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 export function IconGear({ className }: { className?: string }) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">

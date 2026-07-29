@@ -90,6 +90,29 @@ data/
 bin/rojo  bin/lune            # pinned binaries, downloaded by npm run setup (gitignored)
 ```
 
+## Manual edits, history, and the hosted universe (added 2026-07-28)
+
+- `POST /api/projects/[id]/ops` — non-AI edits (gizmo drags) through the SAME
+  validate→apply→save pipeline as chat; one request = one undo step.
+- History: snapshot-based undo/redo in `lib/store` (`pushHistory`/`undoTree`/
+  `redoTree`, 30 snapshots under `data/projects/<id>/history/`). Chat pushes one
+  snapshot per turn (before its first applied mutation); `POST .../undo` and
+  `.../redo` swap trees. Client: Cmd+Z / Shift+Cmd+Z + topbar buttons.
+- Gizmos: `components/viewer/transformGizmo.ts` drives a proxy Object3D with
+  three's TransformControls (1-stud translation snap, 15° rotation snap); live
+  drags apply local PatchOps through the store, drag-end commits to /ops.
+- Hosted universe (STRATEGY.md): `data/settings.json` carries `universeId` +
+  `placePool`; publish auto-assigns a free place per project
+  (`assignPlaceFromPool`), stamps `ProjectMeta.lastPublish`, returns `playUrl`.
+  `scripts/setup-universe.mjs` fills the pool from the anonymous
+  develop.roblox.com places list + key introspection; `scripts/mint-place.mjs`
+  is the CreatePlaceAsync-via-Luau-Execution experiment (unverified).
+- Viewer parity pass: `proceduralTextures.ts` (canvas-drawn detail maps for
+  common materials + the stud grid, tiled by power-of-two repeat buckets, tinted
+  by part Color); block parts with the Baseplate's stud Texture child get a
+  six-slot material array with the studded top face. Wedge geometries have no
+  UVs — no maps there by design.
+
 ## Chat flow
 
 1. Client POSTs `/api/chat` (ChatRequest) → SSE `ChatEvent` stream.
