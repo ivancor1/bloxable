@@ -31,6 +31,62 @@ The only unavoidable manual step is creating the experience, because **no Roblox
 
 The key is stored server-side in `data/settings.json` and never sent to the browser (the settings sheet only ever shows the last 4 characters).
 
+## Eject — send the game to your own Roblox account
+
+Publishing above puts a game into the operator's universe. **Send to Roblox** does the
+opposite: it builds the project as a `.rbxm` model and uploads it into *your* Roblox
+inventory over your own sign-in, so you insert it from the Toolbox and publish the
+experience yourself. That is what makes the game genuinely yours — same account, same
+ownership, DevEx included.
+
+Verified against the live Assets API on 2026-07-29: a Rojo-built `.rbxm` uploads, moderates
+clean and comes back `Approved` / `Active`.
+
+How it works:
+
+- You connect your Roblox account in **Settings → Your Roblox account** (OAuth 2.0, scopes
+  `openid profile asset:read asset:write`). Bloxable never asks for your API key — Roblox's
+  Creator Third Party App Policy forbids that, and OAuth is the sanctioned path for the
+  Assets API.
+- Hit **Send to Roblox**. The tree is projected as a Model: Workspace's children become the
+  model's children, and every other service that holds anything becomes a Folder named after
+  it (tagged with a `BloxableService` attribute).
+- Studio → Toolbox → Inventory → My Models → drag it in, move those service folders into the
+  services they are named after, and File → Publish to Roblox.
+
+Operator setup, once:
+
+```bash
+# create.roblox.com/dashboard/credentials?activeTab=OAuthTab → new OAuth app
+# permissions: asset:read + asset:write (Creation & Productivity Tools category)
+# redirect URL: http://localhost:3000/api/roblox/oauth/callback
+ROBLOX_OAUTH_CLIENT_ID=...
+ROBLOX_OAUTH_CLIENT_SECRET=...
+ROBLOX_OAUTH_REDIRECT_URI=...   # optional; defaults to <origin>/api/roblox/oauth/callback
+```
+
+A new OAuth app is in private mode until Roblox reviews it, capped at 10 unique users.
+Without those two env vars the Settings section says so plainly instead of offering a button
+that cannot work.
+
+Two things it deliberately does not do:
+
+- **No place publishing on your behalf.** Nothing in Open Cloud can publish a place into
+  someone else's experience — `universe-places:write` is in no OAuth category, and
+  `StudioPublishService:PublishAs` is locked to Roblox scripts. The final publish click is
+  yours.
+- **No revisions.** Every eject creates a new model. Roblox's own Assets guide says content
+  updates are `.fbx`-only, which is exactly the `.rbxm` PATCH failure reported in
+  [devforum #4628429](https://devforum.roblox.com/t/api-rejecting-valid-rbxmrbxmx-models/4628429),
+  so re-uploading is honest about being a new asset.
+
+A model carries instances, not service properties: Lighting settings and the like stay
+behind, and the result panel says so after each upload.
+
+`npm run test:model` builds a model with the real toolchain and verifies it by deserializing
+with Lune: one root Model, Workspace content directly under it, a Folder per service, Motor6D
+refs still wired.
+
 ## What works today
 
 - Projects persisted on disk under `data/` (atomic writes), seeded from the real Studio Baseplate template.
@@ -40,6 +96,7 @@ The key is stored server-side in `data/settings.json` and never sent to the brow
 - **Direct manipulation**: select a part → Move/Rotate/Scale gizmo (1-stud / 15° snapping), validated and persisted through the same op pipeline as the AI.
 - **Undo/redo**: Cmd+Z / Shift+Cmd+Z (and topbar buttons) — one step per chat turn or drag, 30 steps per project, server-side snapshots.
 - `.rbxlx` export (always available) and Open Cloud publish with place auto-assignment + play link.
+- **Eject to your own account**: OAuth sign-in + `.rbxm` model upload into your Roblox inventory, with the Studio steps spelled out afterwards.
 - 3D preview: parts, wedges, cylinders, spheres, BrickColors, procedural material detail (wood grain, brick, concrete, grass, metal…), the classic stud-grid baseplate, screen UI, lighting and fog — all read from the real tree.
 - 25 free messages/day, enforced server-side (currently disabled via `UNLIMITED_CREDITS`).
 
@@ -53,6 +110,7 @@ These are real constraints, not TODOs we forgot:
 - **Some classes are refused.** Solid modelling (`UnionOperation`, `NegateOperation`, `IntersectOperation`, `PartOperation`), `SurfaceAppearance`, `EditableImage`, `EditableMesh` and the avatar wrap classes are blocked, because the publish API silently ignores them — a place containing them would upload "successfully" and be wrong.
 - **NPCs are blocky, not avatars.** Avatar-grade characters need uploaded mesh assets. The `blocky_npc` template is a real R6-shaped rig with computed `Motor6D` joints and a walk script, and it has no animations — it slides.
 - **No terrain.** Roblox terrain is a packed voxel blob (`Terrain.SmoothGrid`) the tree format does not emit, so landscapes are built out of parts. A runtime `Terrain:FillBlock` script is the way in later.
-- **No asset upload.** Mesh, image and audio IDs that already exist can be referenced, but Bloxable does not upload your own yet — Open Cloud's Assets API supports it and is not wired up.
+- **No mesh/image/audio upload.** IDs that already exist can be referenced, but Bloxable only uploads the game itself (as a model, via Eject) — meshes, images and audio of your own are not wired up.
+- **Eject hands you a model, not a published game.** No API can publish a place into someone else's experience, so the last step — insert from the Toolbox, drag the service folders into place, File → Publish — is yours. Service properties (Lighting and friends) do not travel in a model, and each eject creates a new asset rather than a revision.
 - **Local, single user.** All state is on disk; there is no auth, no multi-user isolation, and concurrent builds of one project would race. The upgrade button in the paywall is explicitly not wired.
 - **Not yet opened in Studio.** Generated places are verified by round-tripping through Lune, but no one has loaded one into Roblox Studio and pressed Play.

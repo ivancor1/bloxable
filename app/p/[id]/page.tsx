@@ -43,6 +43,9 @@ export default function EditorPage() {
         await switchProject(params.id)
         if (cancelled) return
         setReady(true)
+        // The Roblox OAuth callback returns here — surface its result where the
+        // connection lives.
+        if (new URLSearchParams(window.location.search).has('roblox')) setSettingsOpen(true)
         // Hero-bar handoff: strip the param, then fire the first message.
         const prompt = new URLSearchParams(window.location.search).get('prompt')
         if (prompt) {

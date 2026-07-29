@@ -257,7 +257,17 @@ function runContextOf(inst: RbxInstance): number {
 
 // --- projection -------------------------------------------------------------
 
-export function projectFromTree(tree: RbxTree, name: string): Record<string, string> {
+interface Projector {
+  files: Record<string, string>
+  /** Emits `inst` as a project-file node backed by `modelPath`, files under `dir`. */
+  emitSpine: (inst: RbxInstance, modelPath: string, dir: string) => Record<string, Json>
+}
+
+/**
+ * Shared machinery behind both projections (place and model): the file map, the
+ * ref-target scan, script-file emission and the inline model.json fallback.
+ */
+function createProjector(tree: RbxTree): Projector {
   const files: Record<string, string> = {}
   const index = indexTree(tree)
 
@@ -368,6 +378,12 @@ export function projectFromTree(tree: RbxTree, name: string): Record<string, str
     return node
   }
 
+  return { files, emitSpine }
+}
+
+export function projectFromTree(tree: RbxTree, name: string): Record<string, string> {
+  const { files, emitSpine } = createProjector(tree)
+
   const treeNode: Record<string, Json> = { $className: 'DataModel' }
   const serviceFiles = new NameRegistry()
   const serviceKeys = new Set<string>()
@@ -385,4 +401,95 @@ export function projectFromTree(tree: RbxTree, name: string): Record<string, str
   })
 
   return files
+}
+
+// --- model projection (the eject path) --------------------------------------
+//
+// A Model asset is a single instance tree, not a DataModel: it cannot carry
+// services, and service PROPERTIES (Lighting.TimeOfDay and friends) have nowhere
+// to live. So the projection is: Workspace's children become the Model's own
+// children, and every other service that holds anything becomes a Folder named
+// after it, carrying a `BloxableService` attribute so the origin is not guesswork
+// when the user drags it back into place in Studio.
+
+/** Auto-created Workspace members that cannot be parented to a Model. */
+const NON_MODEL_WORKSPACE_CLASSES = new Set(['Terrain', 'Camera'])
+
+/**
+ * A name the slug function can never produce from a user-chosen instance name
+ * (leading underscores are stripped), so the root model file can never collide
+ * with a projected Folder.
+ */
+const MODEL_ROOT_FILE = 'src/__bloxable_root.model.json'
+
+export interface ModelProjection {
+  files: Record<string, string>
+  /** Services that became Folders inside the model, in tree order. */
+  serviceFolders: string[]
+  /** Instances left out because a Model cannot hold them, e.g. "Terrain [Terrain]". */
+  droppedInstances: string[]
+  /** Services whose own properties cannot travel in a model, e.g. "Lighting". */
+  servicesWithProperties: string[]
+}
+
+export function modelProjectFromTree(tree: RbxTree, name: string): ModelProjection {
+  const { files, emitSpine } = createProjector(tree)
+
+  const serviceFolders: string[] = []
+  const droppedInstances: string[] = []
+  const servicesWithProperties: string[] = []
+  const rootChildren: RbxInstance[] = []
+
+  for (const service of tree.services) {
+    const isWorkspace = service.className === 'Workspace'
+
+    const children = service.children.filter((child) => {
+      if (isWorkspace && NON_MODEL_WORKSPACE_CLASSES.has(child.className)) {
+        droppedInstances.push(`${child.name} [${child.className}]`)
+        return false
+      }
+      return true
+    })
+
+    if (!isWorkspace && Object.keys(service.props).length > 0) {
+      servicesWithProperties.push(service.name)
+    }
+    if (children.length === 0) continue
+
+    if (isWorkspace) {
+      rootChildren.push(...children)
+      continue
+    }
+
+    serviceFolders.push(service.name)
+    rootChildren.push({
+      id: `svc_${service.id}`,
+      className: 'Folder',
+      name: service.name,
+      props: {},
+      attributes: { BloxableService: { type: 'string', value: service.name } },
+      children,
+    })
+  }
+
+  const root: RbxInstance = {
+    id: '__bloxable_root',
+    className: 'Model',
+    name: name || 'Model',
+    props: {},
+    children: rootChildren,
+  }
+
+  // Rojo takes the root instance's Name from the project `name` field, and
+  // refuses a root node that sets both $className and $path — so the root is
+  // $path-only, exactly like a service spine.
+  const rootNode = emitSpine(root, MODEL_ROOT_FILE, 'src')
+
+  files['default.project.json'] = stringifyJson({
+    name: name || 'Model',
+    emitLegacyScripts: false,
+    tree: rootNode as Json,
+  })
+
+  return { files, serviceFolders, droppedInstances, servicesWithProperties }
 }

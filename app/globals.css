@@ -1224,3 +1224,68 @@ a {
 .create-tile:hover .plus {
   border-color: var(--accent);
 }
+
+/* Roblox account block in the settings sheet (the eject connection) */
+.account-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 18px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.account-head {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.account-block .dim {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  margin: 0;
+}
+
+.account-block .btn {
+  align-self: flex-start;
+  text-decoration: none;
+}
+
+.account-block .btn.disabled {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
+/* Eject result modal */
+.eject-card {
+  max-width: 460px;
+  text-align: left;
+}
+
+.eject-steps {
+  margin: 4px 0 0;
+  padding-left: 20px;
+  list-style: decimal outside;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.eject-card > .dim:not(:first-of-type) {
+  margin-top: 2px;
+}
+
+.eject-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.eject-actions .btn {
+  text-decoration: none;
+}

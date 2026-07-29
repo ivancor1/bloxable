@@ -28,12 +28,14 @@ NOTE: this Next.js version may differ from training data — read `node_modules/
 
 **D8 — Model.** Pluggable provider behind `lib/ai/provider.ts`, selected by the key present in `.env.local`: `OPENAI_API_KEY` → OpenAI (default `gpt-5.5`), else `ANTHROPIC_API_KEY` → Anthropic (default `claude-sonnet-5`); either default overridable via `OPENAI_MODEL` / `ANTHROPIC_MODEL`. No key → honest SSE `error` event, never a fake reply. Vendor SDKs are confined to `lib/ai/providers/*`; the loop in `lib/ai/index.ts` (rounds, validation, patch emission, persistence) is provider-agnostic, and `lib/ai/tools.ts` is the single canonical tool list both providers translate from. OpenAI uses Chat Completions — verified live: `max_tokens` is rejected in favour of `max_completion_tokens`, and `temperature` is rejected for any non-default value.
 
+**D9 — Eject (added 2026-07-29).** Publishing (D2) targets the operator universe with the operator key. Eject is the user-owned path: project → `.rbxm` model → upload into the USER'S own account → they insert from the Toolbox and publish it themselves. Verified live on 2026-07-29 that Open Cloud accepts a Rojo-built `.rbxm` (`POST /assets/v1/assets`, multipart `request` + `fileContent;type=model/x-rbxm`, poll `/assets/v1/operations/{id}`; result Approved + Active). Credential is OAuth 2.0, never a user's API key — the Creator Third Party App Policy forbids collecting those, and `asset:read`/`asset:write` are in the OAuth "Creation & Productivity Tools" category (RESEARCH Part 1 Q3b/Q6). PKCE S256 + `client_secret_post`; tokens live server-side in `data/settings.json` next to the operator key and never reach the browser; refresh tokens are single use, so the rotated one is persisted on every refresh and a rejected refresh clears the connection. CREATE ONLY: Roblox's Assets guide states content updates are `.fbx`-only (matching the May 2026 rbxm/rbxmx PATCH failure report), so each eject mints a new asset instead of a revision. Projection: Workspace children become the Model's children; every other service with content becomes a Folder named after it carrying a `BloxableService` attribute; `Terrain`/`Camera` are dropped and service properties cannot travel — all three are reported back to the UI from the projection, never guessed at. Still impossible and still stated in the UI: nothing can publish a PLACE into a user's experience from code.
+
 ## Module map & ownership (builders stay inside their columns)
 
 | Area | Owner | Contents |
 |---|---|---|
 | `lib/rbx/**` (except `types.ts`), `scripts/**`, `package.json` scripts | B1 engine | `tree.ts` (pure ops, isomorphic — no fs), `template.ts` (verified Baseplate values + blocky NPC), `validate.ts` (API-dump validator + banned classes + enum resolution), `rojo.ts` (tree→Rojo project projection), `build.ts` (shell to `bin/rojo`), `scripts/setup-tools.mjs` (download pinned rojo/lune macos-aarch64 + API dump → `bin/`, `data/cache/`), `scripts/test-engine.mjs` (golden test + lune verify) |
-| `lib/store/**`, `app/api/projects/**`, `app/api/settings/**` | B2 persistence/publish | atomic fs CRUD (projects/trees/threads/settings/credits), export route (build → .rbxlx download), publish route (D2), settings routes (key write-only; GET returns masked), test-connection route |
+| `lib/store/**`, `app/api/projects/**`, `app/api/settings/**`, `app/api/roblox/**`, `lib/roblox/**` | B2 persistence/publish | atomic fs CRUD (projects/trees/threads/settings/credits), export route (build → .rbxlx download), publish route (D2), settings routes (key write-only; GET returns masked), test-connection route |
 | `lib/ai/**`, `app/api/chat/**` | B3 AI loop | system prompt (Luau style card + banned classes + RunContext rules + NPC stance + enum guidance, all from RESEARCH Part 2), tool defs (D5), executor bridging validate→tree ops→store, SSE per `lib/protocol.ts`, credits enforcement |
 | `components/viewer/**` | B4 viewer | three.js canvas, geometry/material/lighting per D7, store subscription (applies PatchOps incrementally), raycast selection + outline-mesh highlight, orbit + RMB-look/WASD fly |
 | `app/**` pages/layout, `components/ui/**`, `lib/state/**` | B5 shell | DESIGN.md implementation: tokens, sidebar (switcher/threads/files + read-only code sheet), composer + transcript dock (SSE consumer), topbar (credits pill/Export/Publish/gear), settings sheet (exact copy provided), paywall modal, empty states, keyboard; completes the store stub |
@@ -83,7 +85,8 @@ runChat(req: ChatRequest, emit: (e: ChatEvent) => void): Promise<void>
 data/
   projects/{projectId}/
     project.json  tree.json  threads/{threadId}.json
-    build/                    # generated Rojo project + artifacts (transient)
+    build/                    # generated Rojo project + place artifacts (transient)
+    build-model/              # generated Model project + .rbxm for eject (transient)
   settings.json               # server-only (Roblox API key, universeId/placeId live on ProjectMeta.roblox)
   credits.json                # { day: 'YYYY-MM-DD', used: number }
   cache/api-dump.json         # official API dump, fetched by npm run setup

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ProjectMeta } from '@/lib/rbx/types'
 import { useAppStore } from '@/lib/state/store'
 import { IconGear, IconRedo, IconUndo } from './icons'
+import EjectModal, { type EjectResult } from './EjectModal'
 
 type Toast = { kind: 'ok' | 'err'; text: string; href?: string }
 
@@ -38,6 +39,8 @@ export default function Topbar({
 
   const project = projects.find((p) => p.id === projectId)
   const [publishing, setPublishing] = useState(false)
+  const [ejecting, setEjecting] = useState(false)
+  const [eject, setEject] = useState<EjectResult | null>(null)
   const [toast, setToast] = useState<Toast | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -102,6 +105,55 @@ export default function Topbar({
     }
   }
 
+  /**
+   * Eject: upload this game as a Model into the user's OWN Roblox account. They
+   * insert it from the Toolbox and publish it themselves — the step that makes
+   * the experience theirs (and unblocks DevEx). Requires their own Roblox
+   * sign-in, which is a different credential from the operator's publish key.
+   */
+  async function handleEject() {
+    if (!projectId || ejecting) return
+
+    let connected = false
+    try {
+      const res = await fetch('/api/roblox/account')
+      const account: unknown = res.ok ? await res.json() : null
+      connected = isRecord(account) && account.connected === true
+    } catch {
+      connected = false
+    }
+    if (!connected) {
+      onOpenSettings()
+      return
+    }
+
+    setEjecting(true)
+    try {
+      const res = await fetch(`/api/projects/${projectId}/eject`, { method: 'POST' })
+      const data: unknown = await res.json().catch(() => null)
+      if (!res.ok || !isRecord(data) || typeof data.assetId !== 'string') {
+        showToast({ kind: 'err', text: extractMessage(data, 'Upload to Roblox failed') })
+        return
+      }
+      if (isRecord(data.meta)) setProjectMeta(data.meta as unknown as ProjectMeta)
+      setEject({
+        assetId: data.assetId,
+        assetUrl: typeof data.assetUrl === 'string' ? data.assetUrl : `https://create.roblox.com/store/asset/${data.assetId}`,
+        moderationState: typeof data.moderationState === 'string' ? data.moderationState : null,
+        projectName: project?.name ?? 'Your game',
+        serviceFolders: Array.isArray(data.serviceFolders) ? (data.serviceFolders as string[]) : [],
+        droppedInstances: Array.isArray(data.droppedInstances) ? (data.droppedInstances as string[]) : [],
+        servicesWithProperties: Array.isArray(data.servicesWithProperties)
+          ? (data.servicesWithProperties as string[])
+          : [],
+      })
+    } catch (e) {
+      showToast({ kind: 'err', text: e instanceof Error ? e.message : 'Upload to Roblox failed' })
+    } finally {
+      setEjecting(false)
+    }
+  }
+
   const playUrl =
     project?.lastPublish && project.roblox?.placeId
       ? `https://www.roblox.com/games/start?placeId=${project.roblox.placeId}`
@@ -138,6 +190,14 @@ export default function Topbar({
             Export
           </a>
         )}
+        <button
+          className="btn btn-plain"
+          onClick={() => void handleEject()}
+          disabled={ejecting || !projectId}
+          title="Upload this game as a model into your own Roblox account"
+        >
+          {ejecting ? 'Sending…' : 'Send to Roblox'}
+        </button>
         <button className="btn btn-accent" onClick={handlePublish} disabled={publishing || !projectId}>
           {publishing ? 'Publishing…' : 'Publish'}
         </button>
@@ -156,6 +216,7 @@ export default function Topbar({
           </div>
         )}
       </div>
+      {eject && <EjectModal result={eject} onClose={() => setEject(null)} />}
     </div>
   )
 }

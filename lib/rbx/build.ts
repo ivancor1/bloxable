@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
 import type { RbxTree } from './types'
-import { projectFromTree } from './rojo'
+import { modelProjectFromTree, projectFromTree } from './rojo'
+import type { ModelProjection } from './rojo'
 
 const execFileP = promisify(execFile)
 
@@ -49,18 +50,8 @@ async function exists(target: string): Promise<boolean> {
   }
 }
 
-/**
- * Builds `data/projects/<projectId>/build/place.<format>`.
- * Throws with the Rojo error text verbatim when the build fails.
- */
-export async function buildPlace(
-  projectId: string,
-  format: PlaceFormat,
-): Promise<{ filePath: string; bytes: number }> {
-  if (format !== 'rbxl' && format !== 'rbxlx') {
-    throw new Error(`Unknown place format "${format}" — expected rbxl or rbxlx`)
-  }
-
+/** Loads a project's stored tree plus its display name. */
+async function loadProject(projectId: string): Promise<{ dir: string; tree: RbxTree; name: string }> {
   const dir = projectDir(projectId)
   const treePath = path.join(dir, 'tree.json')
 
@@ -85,11 +76,18 @@ export async function buildPlace(
     // project.json is optional for a build
   }
 
-  const buildDir = path.join(dir, 'build')
+  return { dir, tree, name }
+}
+
+/** Writes a projected Rojo project into a clean build dir and runs `bin/rojo build`. */
+async function runRojo(
+  buildDir: string,
+  files: Record<string, string>,
+  outPath: string,
+): Promise<{ filePath: string; bytes: number }> {
   await rm(buildDir, { recursive: true, force: true })
   await mkdir(buildDir, { recursive: true })
 
-  const files = projectFromTree(tree, name)
   for (const relPath of Object.keys(files)) {
     const target = path.join(buildDir, relPath)
     await mkdir(path.dirname(target), { recursive: true })
@@ -101,7 +99,6 @@ export async function buildPlace(
     throw new Error(`Roblox build tool missing at ${rojo} — ${SETUP_HINT}.`)
   }
 
-  const outPath = path.join(buildDir, `place.${format}`)
   try {
     await execFileP(rojo, ['build', '--output', outPath, buildDir], {
       maxBuffer: 16 * 1024 * 1024,
@@ -117,4 +114,36 @@ export async function buildPlace(
 
   const info = await stat(outPath)
   return { filePath: outPath, bytes: info.size }
+}
+
+/**
+ * Builds `data/projects/<projectId>/build/place.<format>`.
+ * Throws with the Rojo error text verbatim when the build fails.
+ */
+export async function buildPlace(
+  projectId: string,
+  format: PlaceFormat,
+): Promise<{ filePath: string; bytes: number }> {
+  if (format !== 'rbxl' && format !== 'rbxlx') {
+    throw new Error(`Unknown place format "${format}" — expected rbxl or rbxlx`)
+  }
+
+  const { dir, tree, name } = await loadProject(projectId)
+  const buildDir = path.join(dir, 'build')
+  return runRojo(buildDir, projectFromTree(tree, name), path.join(buildDir, `place.${format}`))
+}
+
+export type ModelBuild = { filePath: string; bytes: number } & Omit<ModelProjection, 'files'>
+
+/**
+ * Builds `data/projects/<projectId>/build-model/model.rbxm` — the same tree as a
+ * Model asset, for uploading into a user's own Roblox account (the eject path).
+ * Uses a separate build dir so an eject never races a place build.
+ */
+export async function buildModel(projectId: string): Promise<ModelBuild> {
+  const { dir, tree, name } = await loadProject(projectId)
+  const buildDir = path.join(dir, 'build-model')
+  const { files, ...report } = modelProjectFromTree(tree, name)
+  const built = await runRojo(buildDir, files, path.join(buildDir, 'model.rbxm'))
+  return { ...built, ...report }
 }

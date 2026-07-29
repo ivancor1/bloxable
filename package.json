@@ -11,7 +11,8 @@
     "test:engine": "node scripts/test-engine.mjs",
     "test:ai": "node scripts/test-ai-mapping.mjs",
     "setup:universe": "node scripts/setup-universe.mjs",
-    "mint:place": "node scripts/mint-place.mjs"
+    "mint:place": "node scripts/mint-place.mjs",
+    "test:model": "node scripts/test-model.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

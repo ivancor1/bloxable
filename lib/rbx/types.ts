@@ -133,4 +133,9 @@ export interface ProjectMeta {
   roblox?: { universeId?: string; placeId?: string }
   /** Set after the first successful Open Cloud publish. */
   lastPublish?: { versionNumber: number; at: string }
+  /**
+   * Set after the last successful eject — the model uploaded into the user's own
+   * Roblox account. Every eject mints a new asset, so this is the latest one.
+   */
+  lastEject?: { assetId: string; at: string; moderationState?: string }
 }

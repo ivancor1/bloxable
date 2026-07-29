@@ -8,6 +8,15 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null
 }
 
+interface RobloxAccountInfo {
+  configured: boolean
+  connected: boolean
+  userId: string | null
+  username: string | null
+  displayName: string | null
+  canUpload: boolean
+}
+
 interface ConnectResult {
   connected: boolean
   universeId: string | null
@@ -39,6 +48,51 @@ export default function SettingsSheet({ onClose }: { onClose: () => void }) {
   const [result, setResult] = useState<ConnectResult | null>(null)
   const [manualUniverse, setManualUniverse] = useState('')
   const [manualPlaces, setManualPlaces] = useState('')
+  const [account, setAccount] = useState<RobloxAccountInfo | null>(null)
+  const [accountNotice, setAccountNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+
+  async function loadAccount() {
+    try {
+      const res = await fetch('/api/roblox/account')
+      const data: unknown = res.ok ? await res.json() : null
+      if (isRecord(data)) setAccount(data as unknown as RobloxAccountInfo)
+    } catch {
+      // leave the section in its unknown state rather than claiming a status
+    }
+  }
+
+  // The OAuth callback lands back on this page with its result in the query
+  // string; show it once, then take it out of the URL.
+  useEffect(() => {
+    void (async () => {
+      await loadAccount()
+      const query = new URLSearchParams(window.location.search)
+      const outcome = query.get('roblox')
+      if (!outcome) return
+      setAccountNotice(
+        outcome === 'connected'
+          ? { kind: 'ok', text: `Connected as ${query.get('user') ?? 'your Roblox account'}` }
+          : { kind: 'err', text: query.get('message') ?? 'Roblox sign-in failed.' },
+      )
+      for (const key of ['roblox', 'user', 'message']) query.delete(key)
+      const rest = query.toString()
+      window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : ''))
+    })()
+  }, [])
+
+  async function disconnectAccount() {
+    if (busy) return
+    setBusy(true)
+    setAccountNotice(null)
+    try {
+      await fetch('/api/roblox/account', { method: 'DELETE' })
+      await loadAccount()
+    } catch (e) {
+      setAccountNotice({ kind: 'err', text: e instanceof Error ? e.message : 'Could not disconnect' })
+    } finally {
+      setBusy(false)
+    }
+  }
 
   useEffect(() => {
     fetch('/api/settings')
@@ -142,6 +196,42 @@ export default function SettingsSheet({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <div className="sheet-body">
+          <div className="account-block">
+            <div className="account-head">Your Roblox account</div>
+            <p className="dim">
+              Sends a finished game into your own inventory as a model, so you insert it in Studio and publish the
+              experience yourself. Separate from the API key below, which is this app&apos;s own publish target.
+            </p>
+            {account && !account.configured && (
+              <p className="test-result err">
+                Roblox sign-in is not set up on this server yet — add ROBLOX_OAUTH_CLIENT_ID and
+                ROBLOX_OAUTH_CLIENT_SECRET to .env.local (see the README).
+              </p>
+            )}
+            {account?.connected ? (
+              <>
+                <div className="conn-status">
+                  <span className="conn-dot" />
+                  Signed in as {account.username ?? account.displayName ?? account.userId}
+                  {account.canUpload ? '' : ' · missing upload permission'}
+                </div>
+                <button className="btn btn-plain" onClick={() => void disconnectAccount()} disabled={busy}>
+                  Disconnect
+                </button>
+              </>
+            ) : (
+              <a
+                className={`btn btn-accent${account?.configured === false ? ' disabled' : ''}`}
+                href={`/api/roblox/oauth/start?returnTo=${encodeURIComponent(
+                  typeof window === 'undefined' ? '/' : window.location.pathname,
+                )}`}
+              >
+                Connect Roblox account
+              </a>
+            )}
+            {accountNotice && <p className={`test-result ${accountNotice.kind === 'ok' ? '' : 'err'}`}>{accountNotice.text}</p>}
+          </div>
+
           <div className="field">
             <label htmlFor="roblox-api-key">API key</label>
             <input

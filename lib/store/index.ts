@@ -187,6 +187,7 @@ export interface ProjectPatch {
   name?: string
   roblox?: { universeId?: string; placeId?: string }
   lastPublish?: { versionNumber: number; at: string }
+  lastEject?: { assetId: string; at: string; moderationState?: string }
 }
 
 export async function updateProject(id: string, patch: ProjectPatch): Promise<ProjectMeta> {
@@ -202,6 +203,9 @@ export async function updateProject(id: string, patch: ProjectPatch): Promise<Pr
     }
     if (patch.lastPublish !== undefined) {
       meta.lastPublish = patch.lastPublish
+    }
+    if (patch.lastEject !== undefined) {
+      meta.lastEject = patch.lastEject
     }
     meta.updatedAt = new Date().toISOString()
     await writeJsonAtomic(projectMetaPath(id), meta)
@@ -382,6 +386,10 @@ export async function saveThread(id: string, thread: Thread): Promise<void> {
 
 interface SettingsFile {
   robloxApiKey?: string
+  /** The end user's own Roblox account, connected over OAuth (the eject path). */
+  robloxAccount?: RobloxAccount
+  /** In-flight OAuth handshake: CSRF state + PKCE verifier, single use. */
+  oauthPending?: OauthPending
   /** The operator's universe — all projects publish into places inside it. */
   universeId?: string
   /** Pre-created placeIds inside that universe; projects are assigned one each. */
@@ -524,5 +532,77 @@ export async function spendCredit(): Promise<Credits> {
       total: FREE_DAILY_CREDITS,
       unlimited: false,
     }
+  })
+}
+
+// ---------------------------------------------------------------------------
+// The end user's own Roblox account (OAuth), used by the eject path to upload a
+// model into THEIR inventory. Distinct from `robloxApiKey`, which is the
+// operator's own key for publishing places into the operator universe.
+//
+// Tokens live in the same server-only settings.json and are never returned to
+// the browser — `GET /api/roblox/account` reports identity and scopes only.
+// ---------------------------------------------------------------------------
+
+export interface RobloxAccount {
+  userId: string
+  username?: string
+  displayName?: string
+  accessToken: string
+  refreshToken?: string
+  /** ISO 8601 expiry of the access token. */
+  expiresAt: string
+  scope: string
+  connectedAt: string
+}
+
+export interface OauthPending {
+  state: string
+  verifier: string
+  redirectUri: string
+  createdAt: string
+  /** Same-origin path to return the browser to, e.g. "/p/abc123". */
+  returnTo?: string
+}
+
+export async function getRobloxAccount(): Promise<RobloxAccount | null> {
+  const raw = (await readJson<SettingsFile>(settingsPath())) ?? {}
+  return raw.robloxAccount ?? null
+}
+
+export async function saveRobloxAccount(account: RobloxAccount): Promise<void> {
+  return withLock(settingsPath(), async () => {
+    const raw = (await readJson<SettingsFile>(settingsPath())) ?? {}
+    raw.robloxAccount = account
+    await writeJsonAtomic(settingsPath(), raw)
+  })
+}
+
+export async function clearRobloxAccount(): Promise<void> {
+  return withLock(settingsPath(), async () => {
+    const raw = (await readJson<SettingsFile>(settingsPath())) ?? {}
+    delete raw.robloxAccount
+    await writeJsonAtomic(settingsPath(), raw)
+  })
+}
+
+export async function setOauthPending(pending: OauthPending): Promise<void> {
+  return withLock(settingsPath(), async () => {
+    const raw = (await readJson<SettingsFile>(settingsPath())) ?? {}
+    raw.oauthPending = pending
+    await writeJsonAtomic(settingsPath(), raw)
+  })
+}
+
+/** Reads and clears the pending handshake — a state/verifier pair is single use. */
+export async function takeOauthPending(): Promise<OauthPending | null> {
+  return withLock(settingsPath(), async () => {
+    const raw = (await readJson<SettingsFile>(settingsPath())) ?? {}
+    const pending = raw.oauthPending ?? null
+    if (pending) {
+      delete raw.oauthPending
+      await writeJsonAtomic(settingsPath(), raw)
+    }
+    return pending
   })
 }

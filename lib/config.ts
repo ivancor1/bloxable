@@ -26,3 +26,14 @@ export const PUBLISH_SIZE_WARN = 8 * 1024 * 1024
 /** Pinned toolchain (RESEARCH.md Part 2). */
 export const ROJO_VERSION = '7.7.0'
 export const LUNE_VERSION = '0.10.5'
+
+/**
+ * Scopes requested when a user connects their own Roblox account (the eject
+ * path). asset:read + asset:write are both inside the OAuth2 "Creation &
+ * Productivity Tools" category — verified in RESEARCH.md Part 1 Q3b — and are
+ * what the Assets API needs to upload a model into that user's inventory.
+ */
+export const ROBLOX_OAUTH_SCOPES = ['openid', 'profile', 'asset:read', 'asset:write']
+
+/** Assets API cap for Model uploads (bytes) — RESEARCH.md Part 1 Q6. */
+export const ASSET_SIZE_LIMIT = 20 * 1024 * 1024

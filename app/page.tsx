@@ -66,7 +66,12 @@ export default function HomePage() {
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    loadInitial().finally(() => setReady(true))
+    loadInitial().finally(() => {
+      setReady(true)
+      // The Roblox OAuth callback can land here; open Settings so its result is
+      // shown next to the connection it belongs to.
+      if (new URLSearchParams(window.location.search).has('roblox')) setSettingsOpen(true)
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
