@@ -36,6 +36,7 @@ The key is stored server-side in `data/settings.json` and never sent to the brow
 - Projects persisted on disk under `data/` (atomic writes), seeded from the real Studio Baseplate template.
 - Chat → tool-use loop → validated `PatchOp`s → live tree, viewer and file list updates over SSE.
 - Every op checked against the official API dump: class exists, property exists, enum name resolved to its token.
+- Every property type the `.rbxlx` format carries, including `UDim2`, `UDim`, `Vector2`, `Rect`, `NumberRange`, `NumberSequence`, `ColorSequence`, `Font` and `PhysicalProperties`, plus instance attributes and CollectionService tags.
 - **Direct manipulation**: select a part → Move/Rotate/Scale gizmo (1-stud / 15° snapping), validated and persisted through the same op pipeline as the AI.
 - **Undo/redo**: Cmd+Z / Shift+Cmd+Z (and topbar buttons) — one step per chat turn or drag, 30 steps per project, server-side snapshots.
 - `.rbxlx` export (always available) and Open Cloud publish with place auto-assignment + play link.
@@ -48,9 +49,10 @@ These are real constraints, not TODOs we forgot:
 
 - **No experience-creation API.** Roblox has no endpoint that mints a universe or place, so the one-time Studio step above is unavoidable.
 - **10 MiB publish cap.** Open Cloud rejects place uploads over 10,485,760 bytes. Bloxable warns at 8 MiB and blocks past the cap, pointing you at export instead.
-- **The preview is an approximation.** Terrain, MeshParts, decal/texture images and GUI instances are not rendered — they show up in Roblox only. Materials are PBR approximations and the sun direction is not Roblox's real formula.
+- **The preview is an approximation.** Screen UI under `StarterGui` is drawn as real DOM over the canvas, but terrain, MeshParts, decal/texture images, `BillboardGui` and `SurfaceGui` are not rendered — they show up in Roblox only. `TextScaled` is solved from the laid-out box instead of by Roblox's own formula, materials are PBR approximations and the sun direction is not Roblox's real formula.
 - **Some classes are refused.** Solid modelling (`UnionOperation`, `NegateOperation`, `IntersectOperation`, `PartOperation`), `SurfaceAppearance`, `EditableImage`, `EditableMesh` and the avatar wrap classes are blocked, because the publish API silently ignores them — a place containing them would upload "successfully" and be wrong.
 - **NPCs are blocky, not avatars.** Avatar-grade characters need uploaded mesh assets. The `blocky_npc` template is a real R6-shaped rig with computed `Motor6D` joints and a walk script, and it has no animations — it slides.
-- **Some property types can't be set yet.** `UDim2`, `NumberRange`, `Font`, `PhysicalProperties`, attributes and tags are outside the tree format, so requests needing them are refused with an explicit message rather than silently dropped.
+- **No terrain.** Roblox terrain is a packed voxel blob (`Terrain.SmoothGrid`) the tree format does not emit, so landscapes are built out of parts. A runtime `Terrain:FillBlock` script is the way in later.
+- **No asset upload.** Mesh, image and audio IDs that already exist can be referenced, but Bloxable does not upload your own yet — Open Cloud's Assets API supports it and is not wired up.
 - **Local, single user.** All state is on disk; there is no auth, no multi-user isolation, and concurrent builds of one project would race. The upgrade button in the paywall is explicitly not wired.
 - **Not yet opened in Studio.** Generated places are verified by round-tripping through Lune, but no one has loaded one into Roblox Studio and pressed Play.
