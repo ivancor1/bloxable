@@ -21,7 +21,7 @@ export interface AppState {
   activeThreadId: string | null
   messages: ThreadMessage[]
   streaming: boolean
-  credits: { remaining: number; total: number }
+  credits: { remaining: number; total: number; unlimited: boolean }
 
   // Pure/client actions (implemented here)
   applyPatchOps(ops: PatchOp[]): void
@@ -88,7 +88,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeThreadId: null,
   messages: [],
   streaming: false,
-  credits: { remaining: 0, total: FREE_DAILY_CREDITS },
+  credits: { remaining: 0, total: FREE_DAILY_CREDITS, unlimited: false },
 
   applyPatchOps(ops) {
     const { tree, treeVersion, selectionId } = get()
@@ -113,12 +113,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       fetch('/api/credits'),
     ])
     const projects: ProjectMeta[] = projectsRes.ok ? ((await readJson(projectsRes)) as ProjectMeta[]) ?? [] : []
-    const credits = creditsRes.ok
-      ? ((await readJson(creditsRes)) as { remaining: number; total: number } | null) ?? {
-          remaining: 0,
-          total: FREE_DAILY_CREDITS,
-        }
-      : { remaining: 0, total: FREE_DAILY_CREDITS }
+    const fallback = { remaining: 0, total: FREE_DAILY_CREDITS, unlimited: false }
+    const loadedCredits = creditsRes.ok
+      ? ((await readJson(creditsRes)) as {
+          remaining: number
+          total: number
+          unlimited?: boolean
+        } | null)
+      : null
+    const credits = loadedCredits
+      ? { ...loadedCredits, unlimited: loadedCredits.unlimited === true }
+      : fallback
 
     set({ projects, credits })
 
@@ -281,7 +286,15 @@ export const useAppStore = create<AppState>((set, get) => ({
               get().applyPatchOps(evt.ops)
               break
             case 'credits':
-              set({ credits: { remaining: evt.remaining, total: evt.total } })
+              // The SSE event carries numbers only (lib/protocol.ts is a locked
+              // contract), so whether the limit is off stays as loaded.
+              set({
+                credits: {
+                  remaining: evt.remaining,
+                  total: evt.total,
+                  unlimited: get().credits.unlimited,
+                },
+              })
               break
             case 'error':
               pushChip(`${ERROR_PREFIX}${evt.message}`)

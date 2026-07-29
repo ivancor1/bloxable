@@ -19,7 +19,7 @@ import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 
-import { FREE_DAILY_CREDITS } from '@/lib/config'
+import { FREE_DAILY_CREDITS, UNLIMITED_CREDITS } from '@/lib/config'
 import type { ProjectMeta, RbxTree } from '@/lib/rbx/types'
 import { defaultBaseplateTree } from '@/lib/rbx/template'
 import type { Thread, ThreadSummary } from '@/lib/protocol'
@@ -299,18 +299,41 @@ async function loadRolledCredits(): Promise<CreditsFile> {
   return raw
 }
 
-export async function getCredits(): Promise<{ remaining: number; total: number }> {
+export interface Credits {
+  remaining: number
+  total: number
+  /** True while UNLIMITED_CREDITS is on: nothing is counted or gated. */
+  unlimited: boolean
+}
+
+export async function getCredits(): Promise<Credits> {
+  if (UNLIMITED_CREDITS) {
+    return { remaining: FREE_DAILY_CREDITS, total: FREE_DAILY_CREDITS, unlimited: true }
+  }
   return withLock(creditsPath(), async () => {
     const state = await loadRolledCredits()
-    return { remaining: Math.max(0, FREE_DAILY_CREDITS - state.used), total: FREE_DAILY_CREDITS }
+    return {
+      remaining: Math.max(0, FREE_DAILY_CREDITS - state.used),
+      total: FREE_DAILY_CREDITS,
+      unlimited: false,
+    }
   })
 }
 
-export async function spendCredit(): Promise<{ remaining: number; total: number }> {
+export async function spendCredit(): Promise<Credits> {
+  // No counting while the limit is off — otherwise the day's file quietly fills
+  // up and turning the limit back on locks the user out of a day they paid for.
+  if (UNLIMITED_CREDITS) {
+    return { remaining: FREE_DAILY_CREDITS, total: FREE_DAILY_CREDITS, unlimited: true }
+  }
   return withLock(creditsPath(), async () => {
     const state = await loadRolledCredits()
     const used = Math.min(FREE_DAILY_CREDITS, state.used + 1)
     await writeJsonAtomic(creditsPath(), { day: state.day, used })
-    return { remaining: Math.max(0, FREE_DAILY_CREDITS - used), total: FREE_DAILY_CREDITS }
+    return {
+      remaining: Math.max(0, FREE_DAILY_CREDITS - used),
+      total: FREE_DAILY_CREDITS,
+      unlimited: false,
+    }
   })
 }
