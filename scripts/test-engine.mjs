@@ -673,15 +673,316 @@ print("lune verify (edge cases): all assertions passed")
   }
 }
 
+// --- 7. rich property types --------------------------------------------------
+// UI, particles, attributes and tags: the types that used to be silently
+// skipped. Every one is checked all the way into a real place file, not just
+// accepted by the validator.
+
+section('rich property types')
+const RICH_ID = 'engine-test-rich'
+const RICH_DIR = path.join(ROOT, 'data', 'projects', RICH_ID)
+
+const richBase = defaultBaseplateTree()
+const richWorkspace = richBase.services.find((s) => s.className === 'Workspace')
+const richStarterGui = richBase.services.find((s) => s.className === 'StarterGui')
+
+const hud = {
+  id: newId(),
+  className: 'ScreenGui',
+  name: 'HUD',
+  props: { ResetOnSpawn: { type: 'bool', value: false } },
+  children: [
+    {
+      id: newId(),
+      className: 'Frame',
+      name: 'Panel',
+      props: {
+        Size: { type: 'UDim2', value: [[0.5, 0], [0, 120]] },
+        Position: { type: 'UDim2', value: [[0.5, 0], [0, 24]] },
+        AnchorPoint: { type: 'Vector2', value: [0.5, 0] },
+        BackgroundColor3: { type: 'Color3', value: [0.09, 0.09, 0.11] },
+        BackgroundTransparency: { type: 'float', value: 0.15 },
+      },
+      children: [
+        {
+          id: newId(),
+          className: 'UICorner',
+          name: 'Corner',
+          props: { CornerRadius: { type: 'UDim', value: [0, 12] } },
+          children: [],
+        },
+        {
+          id: newId(),
+          className: 'UIListLayout',
+          name: 'Layout',
+          props: { Padding: { type: 'UDim', value: [0, 8] } },
+          children: [],
+        },
+        {
+          id: newId(),
+          className: 'TextLabel',
+          name: 'Score',
+          props: {
+            Size: { type: 'UDim2', value: [[1, -16], [0, 48]] },
+            Text: { type: 'string', value: 'Score: 0' },
+            TextScaled: { type: 'bool', value: true },
+            TextColor3: { type: 'Color3', value: [1, 1, 1] },
+            BackgroundTransparency: { type: 'float', value: 1 },
+            FontFace: {
+              type: 'Font',
+              value: { family: 'rbxasset://fonts/families/BuilderSans.json', weight: 'Bold', style: 'Normal' },
+            },
+          },
+          children: [],
+        },
+        {
+          id: newId(),
+          className: 'ImageLabel',
+          name: 'Badge',
+          props: {
+            Size: { type: 'UDim2', value: [[0, 64], [0, 64]] },
+            SliceCenter: { type: 'Rect', value: [[4, 4], [12, 12]] },
+            ImageRectSize: { type: 'Vector2', value: [64, 64] },
+          },
+          children: [],
+        },
+      ],
+    },
+  ],
+}
+
+const coin = {
+  id: newId(),
+  className: 'Part',
+  name: 'Coin',
+  props: {
+    Size: { type: 'Vector3', value: [2, 2, 0.4] },
+    CFrame: { type: 'CFrame', value: { pos: [0, 5, -12], rot: [1, 0, 0, 0, 1, 0, 0, 0, 1] } },
+    Anchored: { type: 'bool', value: true },
+    CustomPhysicalProperties: {
+      type: 'PhysicalProperties',
+      value: {
+        density: 2,
+        friction: 0.4,
+        elasticity: 0.6,
+        frictionWeight: 1,
+        elasticityWeight: 1,
+        acousticAbsorption: 1,
+      },
+    },
+  },
+  attributes: {
+    Points: { type: 'double', value: 5 },
+    Rarity: { type: 'string', value: 'gold' },
+  },
+  tags: ['Coin', 'Collectible'],
+  children: [
+    {
+      id: newId(),
+      className: 'ParticleEmitter',
+      name: 'Shine',
+      props: {
+        Rate: { type: 'float', value: 12 },
+        Lifetime: { type: 'NumberRange', value: [0.4, 0.9] },
+        Speed: { type: 'NumberRange', value: [1, 3] },
+        Size: {
+          type: 'NumberSequence',
+          value: [
+            { time: 0, value: 0.6, envelope: 0 },
+            { time: 1, value: 0, envelope: 0 },
+          ],
+        },
+        Transparency: {
+          type: 'NumberSequence',
+          value: [
+            { time: 0, value: 0, envelope: 0 },
+            { time: 1, value: 1, envelope: 0 },
+          ],
+        },
+        Color: {
+          type: 'ColorSequence',
+          value: [
+            { time: 0, color: [1, 0.85, 0.2] },
+            { time: 1, color: [1, 0.4, 0] },
+          ],
+        },
+      },
+      children: [],
+    },
+  ],
+}
+
+const richOps = [
+  { op: 'create', parentId: richStarterGui.id, instance: hud },
+  { op: 'create', parentId: richWorkspace.id, instance: coin },
+]
+
+const richValidated = validateOps(reflection, richBase, richOps)
+eq(richValidated.errors.length, 0, `rich validateOps: ${richValidated.errors.join(' | ')}`)
+eq(richValidated.ok.length, 2, 'both rich subtrees survived validation')
+
+// A sequence that does not start at 0 and end at 1 is a Roblox error, not ours.
+const badSequence = validateOps(reflection, richBase, [
+  {
+    op: 'create',
+    parentId: richWorkspace.id,
+    instance: {
+      id: newId(),
+      className: 'ParticleEmitter',
+      name: 'Bad',
+      props: {
+        Transparency: {
+          type: 'NumberSequence',
+          value: [
+            { time: 0.2, value: 0, envelope: 0 },
+            { time: 0.8, value: 1, envelope: 0 },
+          ],
+        },
+      },
+      children: [],
+    },
+  },
+])
+ok(
+  badSequence.errors.some((e) => e.includes('must start at time 0 and end at time 1')),
+  'a malformed NumberSequence is caught with a fixable message',
+)
+// The emitter itself still lands — partial failure stays partial.
+eq(badSequence.ok.length, 1, 'the bad keypoint list is dropped, the instance is kept')
+
+const richApplied = applyPatchOps(richBase, richValidated.ok)
+eq(richApplied.errors.length, 0, `rich applyPatchOps: ${richApplied.errors.join(' | ')}`)
+
+const richIndex = indexTree(richApplied.tree)
+const storedCoin = [...richIndex.values()].find((e) => e.inst.name === 'Coin').inst
+eq(storedCoin.tags.join(','), 'Coin,Collectible', 'tags survive the tree round trip')
+eq(storedCoin.attributes.Points.value, 5, 'attributes survive the tree round trip')
+
+// The outline is what the model re-reads; UI has to be legible in it.
+const richOutline = outline(richApplied.tree)
+ok(richOutline.includes('size=50%,120'), `UDim2 size in the outline:\n${richOutline}`)
+ok(richOutline.includes('tags=Coin+Collectible'), 'tags in the outline')
+ok(richOutline.includes('attrs=Points+Rarity'), 'attributes in the outline')
+
+const richFiles = projectFromTree(richApplied.tree, 'Rich Types')
+const guiModel = JSON.parse(richFiles['src/StarterGui.model.json'])
+const panelNode = guiModel.children[0].children[0]
+eq(
+  JSON.stringify(panelNode.properties.Size),
+  JSON.stringify({ UDim2: [[0.5, 0], [0, 120]] }),
+  'UDim2 projects to Rojo explicit form',
+)
+const richWorkspaceModel = JSON.parse(richFiles['src/Workspace.model.json'])
+const coinNode = richWorkspaceModel.children.find((c) => c.name === 'Coin')
+eq(JSON.stringify(coinNode.properties.Tags), JSON.stringify({ Tags: ['Coin', 'Collectible'] }), 'tags project')
+eq(JSON.stringify(coinNode.attributes.Points), JSON.stringify({ Float64: 5 }), 'attributes project')
+ok(
+  coinNode.properties.CustomPhysicalProperties.PhysicalProperties.acousticAbsorption === 1,
+  'PhysicalProperties keeps all six fields rbx-dom requires',
+)
+
+await rm(RICH_DIR, { recursive: true, force: true })
+await mkdir(RICH_DIR, { recursive: true })
+await writeFile(path.join(RICH_DIR, 'tree.json'), JSON.stringify(richApplied.tree))
+await writeFile(path.join(RICH_DIR, 'project.json'), JSON.stringify({ id: RICH_ID, name: 'Rich Types' }))
+const richPlace = await buildPlace(RICH_ID, 'rbxlx')
+ok(richPlace.bytes > 0, 'rich place built with the real rojo binary')
+
+const richXml = await readFile(richPlace.filePath, 'utf8')
+ok(richXml.includes('<UDim2 name="Size">'), 'the place file really contains a UDim2')
+ok(richXml.includes('<Font name="FontFace">'), 'the place file really contains a Font')
+ok(richXml.includes('<NumberSequence name="Transparency">'), 'the place file really contains a NumberSequence')
+ok(richXml.includes('<ColorSequence name="Color">'), 'the place file really contains a ColorSequence')
+ok(richXml.includes('<NumberRange name="Lifetime">'), 'the place file really contains a NumberRange')
+ok(richXml.includes('<Rect2D name="SliceCenter">'), 'the place file really contains a Rect')
+ok(richXml.includes('<PhysicalProperties name="CustomPhysicalProperties">'), 'the place file really contains PhysicalProperties')
+// rbx-dom serializes UICorner.CornerRadius as the four per-corner radii; Lune
+// has no default for the virtual property, so the file is the source of truth.
+ok(richXml.includes('<UDim name="TopLeftRadius">'), 'UICorner radius reaches the place file')
+
+if (existsSync(lune)) {
+  const richVerifyPath = path.join(RICH_DIR, 'build', 'verify.luau')
+  await writeFile(
+    richVerifyPath,
+    `local fs = require("@lune/fs")
+local roblox = require("@lune/roblox")
+local UDim = roblox.UDim
+local UDim2 = roblox.UDim2
+local Vector2 = roblox.Vector2
+local NumberRange = roblox.NumberRange
+
+local failures = {}
+local function check(condition, message)
+	if not condition then
+		table.insert(failures, message)
+	end
+end
+
+local place = roblox.deserializePlace(fs.readFile(${JSON.stringify(richPlace.filePath)}))
+
+local panel = place:GetService("StarterGui"):FindFirstChild("HUD"):FindFirstChild("Panel")
+check(panel ~= nil, "Frame missing from StarterGui")
+check(panel.Size == UDim2.new(0.5, 0, 0, 120), "Frame.Size " .. tostring(panel.Size))
+check(panel.Position == UDim2.new(0.5, 0, 0, 24), "Frame.Position " .. tostring(panel.Position))
+check(panel.AnchorPoint == Vector2.new(0.5, 0), "Frame.AnchorPoint " .. tostring(panel.AnchorPoint))
+
+local label = panel:FindFirstChild("Score")
+check(label ~= nil, "TextLabel missing")
+check(label.Text == "Score: 0", "TextLabel.Text " .. tostring(label.Text))
+check(label.TextScaled == true, "TextLabel.TextScaled")
+check(
+	string.find(tostring(label.FontFace.Family), "BuilderSans") ~= nil,
+	"TextLabel.FontFace family " .. tostring(label.FontFace.Family)
+)
+check(tostring(label.FontFace.Weight) == "Enum.FontWeight.Bold", "FontFace weight " .. tostring(label.FontFace.Weight))
+
+check(panel:FindFirstChild("Corner") ~= nil, "UICorner missing")
+check(panel:FindFirstChild("Layout").Padding == UDim.new(0, 8), "UIListLayout.Padding")
+
+local coin = place:GetService("Workspace"):FindFirstChild("Coin")
+check(coin ~= nil, "Coin missing")
+check(coin:GetAttribute("Points") == 5, "Coin attribute Points " .. tostring(coin:GetAttribute("Points")))
+check(coin:GetAttribute("Rarity") == "gold", "Coin attribute Rarity " .. tostring(coin:GetAttribute("Rarity")))
+local tags = coin:GetTags()
+table.sort(tags)
+check(table.concat(tags, ",") == "Coin,Collectible", "Coin tags " .. table.concat(tags, ","))
+
+local shine = coin:FindFirstChild("Shine")
+check(shine ~= nil, "ParticleEmitter missing")
+check(shine.Lifetime == NumberRange.new(0.4, 0.9), "emitter Lifetime " .. tostring(shine.Lifetime))
+check(#shine.Transparency.Keypoints == 2, "emitter Transparency keypoints")
+check(shine.Transparency.Keypoints[2].Value == 1, "emitter fades out")
+check(#shine.Color.Keypoints == 2, "emitter Color keypoints")
+
+if #failures > 0 then
+	for _, message in failures do
+		print("FAIL " .. message)
+	end
+	error(\`lune verify: {#failures} failed assertion(s)\`)
+end
+
+print("lune verify (rich types): all assertions passed")
+`,
+  )
+  try {
+    const { stdout } = await execFileP(lune, ['run', richVerifyPath], { cwd: ROOT })
+    process.stdout.write(stdout)
+    ok(stdout.includes('all assertions passed'), 'rich-type lune verify reported success')
+  } catch (err) {
+    failures.push(`rich-type lune verify failed:\n${(err.stderr || err.stdout || err.message).trim()}`)
+  }
+}
+
 // --- report ------------------------------------------------------------------
 
 process.stdout.write(`\n${checks - failures.length}/${checks} checks passed\n`)
 if (failures.length > 0) {
-  process.stdout.write(`artifacts left in ${PROJECT_DIR} and ${EDGE_DIR}\n`)
+  process.stdout.write(`artifacts left in ${PROJECT_DIR}, ${EDGE_DIR} and ${RICH_DIR}\n`)
   for (const failure of failures) process.stderr.write(`FAIL ${failure}\n`)
   process.exit(1)
 }
 // Keep data/projects clean — these are not real user projects.
 await rm(PROJECT_DIR, { recursive: true, force: true })
 await rm(EDGE_DIR, { recursive: true, force: true })
+await rm(RICH_DIR, { recursive: true, force: true })
 process.stdout.write('engine test: OK\n')

@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import type { PatchOp, RbxInstance, RbxPropValue, RbxTree } from './types'
+import type { PatchOp, RbxAttrValue, RbxInstance, RbxPropValue, RbxTree } from './types'
 import { indexTree } from './tree'
 
 /**
@@ -248,6 +248,24 @@ function allowedValueTypes(prop: ReflectionProperty): string[] {
       return ['string']
     case 'BrickColor':
       return ['int']
+    case 'UDim':
+      return ['UDim']
+    case 'UDim2':
+      return ['UDim2']
+    case 'Vector2':
+      return ['Vector2']
+    case 'Rect':
+      return ['Rect']
+    case 'NumberRange':
+      return ['NumberRange']
+    case 'NumberSequence':
+      return ['NumberSequence']
+    case 'ColorSequence':
+      return ['ColorSequence']
+    case 'Font':
+      return ['Font']
+    case 'PhysicalProperties':
+      return ['PhysicalProperties']
     default:
       return []
   }
@@ -264,6 +282,19 @@ function finite(value: RbxPropValue): boolean {
     case 'Vector3':
     case 'Color3':
       return value.value.length === 3 && value.value.every((n) => Number.isFinite(n))
+    case 'UDim':
+    case 'Vector2':
+    case 'NumberRange':
+      return value.value.length === 2 && value.value.every((n) => Number.isFinite(n))
+    case 'UDim2':
+    case 'Rect':
+      return value.value.length === 2 && value.value.every((pair) => pair.length === 2 && pair.every((n) => Number.isFinite(n)))
+    case 'NumberSequence':
+      return value.value.every((k) => Number.isFinite(k.time) && Number.isFinite(k.value) && Number.isFinite(k.envelope))
+    case 'ColorSequence':
+      return value.value.every((k) => Number.isFinite(k.time) && k.color.length === 3 && k.color.every((n) => Number.isFinite(n)))
+    case 'PhysicalProperties':
+      return value.value === 'Default' || Object.values(value.value).every((n) => Number.isFinite(n))
     case 'CFrame':
       return (
         value.value.pos.length === 3 &&
@@ -372,7 +403,90 @@ function validateProp(
     }
   }
 
+  if (value.type === 'NumberSequence' || value.type === 'ColorSequence') {
+    const times = value.value.map((k) => k.time)
+    if (times.length < 2) {
+      return { error: `${label}: ${propName} needs at least 2 keypoints (the first at time 0, the last at time 1)` }
+    }
+    if (times.length > 20) {
+      return { error: `${label}: ${propName} allows at most 20 keypoints, got ${times.length}` }
+    }
+    if (times[0] !== 0 || times[times.length - 1] !== 1) {
+      return { error: `${label}: ${propName} must start at time 0 and end at time 1` }
+    }
+    for (let i = 1; i < times.length; i++) {
+      if (times[i] < times[i - 1]) {
+        return { error: `${label}: ${propName} keypoint times must not go backwards` }
+      }
+    }
+  }
+
+  if (value.type === 'Font') {
+    const weights = reflection.enums.get('FontWeight')
+    const styles = reflection.enums.get('FontStyle')
+    if (weights && !weights.has(value.value.weight)) {
+      return {
+        error: `${label}: ${propName} weight "${value.value.weight}" is not an Enum.FontWeight item (valid: ${[...weights.keys()].join(', ')})`,
+      }
+    }
+    if (styles && !styles.has(value.value.style)) {
+      return {
+        error: `${label}: ${propName} style "${value.value.style}" is not an Enum.FontStyle item (valid: ${[...styles.keys()].join(', ')})`,
+      }
+    }
+    if (!value.value.family) {
+      return { error: `${label}: ${propName} needs a font family asset, e.g. "rbxasset://fonts/families/GothamSSm.json"` }
+    }
+  }
+
   return { value }
+}
+
+/** Attributes and tags are free-form, but Roblox still has rules about the names. */
+function validateAttributeName(name: string): string | null {
+  if (name.length === 0 || name.length > 100) return 'an attribute name must be 1-100 characters'
+  if (!/^[A-Za-z0-9_]+$/.test(name)) return 'an attribute name may only contain letters, numbers and underscores'
+  if (name.startsWith('RBX')) return 'attribute names starting with "RBX" are reserved by Roblox'
+  return null
+}
+
+function validateAttributes(
+  raw: Record<string, RbxAttrValue> | undefined,
+  label: string,
+  warnings: string[],
+): Record<string, RbxAttrValue> | undefined {
+  if (!raw) return undefined
+  const out: Record<string, RbxAttrValue> = {}
+  for (const name of Object.keys(raw)) {
+    const problem = validateAttributeName(name)
+    if (problem) {
+      warnings.push(`${label}: attribute "${name}" skipped — ${problem}`)
+      continue
+    }
+    out[name] = raw[name]
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+function validateTags(
+  raw: string[] | undefined,
+  label: string,
+  warnings: string[],
+): string[] | undefined {
+  if (!raw) return undefined
+  const out: string[] = []
+  for (const tag of raw) {
+    if (typeof tag !== 'string' || tag.length === 0) {
+      warnings.push(`${label}: an empty tag was skipped`)
+      continue
+    }
+    if (tag.includes('\0')) {
+      warnings.push(`${label}: tag "${tag}" skipped — tags cannot contain a null character`)
+      continue
+    }
+    if (!out.includes(tag)) out.push(tag)
+  }
+  return out.length > 0 ? out : undefined
 }
 
 export interface ValidateResult {
@@ -454,8 +568,19 @@ export function validateOps(
       warnings.push(...result.warnings)
     }
 
+    const attributes = validateAttributes(node.attributes, label, warnings)
+    const tags = validateTags(node.tags, label, warnings)
+
     return {
-      instance: { id: node.id, className, name: node.name || className, props, children },
+      instance: {
+        id: node.id,
+        className,
+        name: node.name || className,
+        props,
+        ...(attributes ? { attributes } : {}),
+        ...(tags ? { tags } : {}),
+        children,
+      },
       warnings,
     }
   }
@@ -523,7 +648,28 @@ export function validateOps(
           }
           props[propName] = result.value
         }
-        if (Object.keys(props).length === 0) {
+        const attrWarnings: string[] = []
+        const attributes = op.attributes
+          ? (Object.fromEntries(
+              Object.entries(op.attributes).filter(([name, value]) => {
+                if (value === null) return true
+                const problem = validateAttributeName(name)
+                if (problem) {
+                  attrWarnings.push(`update ${op.id} (${className}): attribute "${name}" skipped — ${problem}`)
+                  return false
+                }
+                return true
+              }),
+            ) as Record<string, RbxAttrValue | null>)
+          : undefined
+        const tags = op.tags
+          ? validateTags(op.tags, `update ${op.id} (${className})`, attrWarnings) ?? []
+          : undefined
+        errors.push(...attrWarnings)
+
+        const touchesAttributes = attributes !== undefined && Object.keys(attributes).length > 0
+        const touchesTags = tags !== undefined
+        if (Object.keys(props).length === 0 && !touchesAttributes && !touchesTags) {
           // Only say this when nothing was offered at all — if every property was
           // skipped, the reasons above already explain it.
           if (errors.length === errorsBefore) {
@@ -531,7 +677,13 @@ export function validateOps(
           }
           break
         }
-        ok.push({ op: 'update', id: op.id, props })
+        ok.push({
+          op: 'update',
+          id: op.id,
+          props,
+          ...(touchesAttributes ? { attributes } : {}),
+          ...(touchesTags ? { tags } : {}),
+        })
         break
       }
 

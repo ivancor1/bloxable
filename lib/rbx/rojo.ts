@@ -8,7 +8,7 @@
 // carried in `.model.json` children arrays because project-file keys — which
 // ARE the instance name, `Name` cannot be set as a property — must be unique.
 
-import type { RbxInstance, RbxPropValue, RbxTree } from './types'
+import type { RbxAttrValue, RbxInstance, RbxPropValue, RbxTree } from './types'
 import { indexTree } from './tree'
 
 /** Classes whose children Rojo can express as real files on disk. */
@@ -129,11 +129,74 @@ function rojoValue(propName: string, prop: RbxPropValue): Json | null {
         },
       }
     }
+    case 'UDim':
+      return { UDim: [...prop.value] }
+    case 'UDim2':
+      return { UDim2: [[...prop.value[0]], [...prop.value[1]]] }
+    case 'Vector2':
+      return { Vector2: [...prop.value] }
+    case 'Rect':
+      return { Rect: [[...prop.value[0]], [...prop.value[1]]] }
+    case 'NumberRange':
+      return { NumberRange: [...prop.value] }
+    case 'NumberSequence':
+      return {
+        NumberSequence: {
+          keypoints: prop.value.map((k) => ({ time: k.time, value: k.value, envelope: k.envelope })),
+        },
+      }
+    case 'ColorSequence':
+      return {
+        ColorSequence: {
+          keypoints: prop.value.map((k) => ({ time: k.time, color: [...k.color] })),
+        },
+      }
+    case 'Font':
+      return {
+        Font: {
+          family: prop.value.family,
+          weight: prop.value.weight,
+          style: prop.value.style,
+        },
+      }
+    case 'PhysicalProperties':
+      // rbx-dom takes the tagged enum: "Default", or Custom with all six fields
+      // (acousticAbsorption included — it is required and undocumented).
+      return prop.value === 'Default'
+        ? { PhysicalProperties: 'Default' }
+        : {
+            PhysicalProperties: {
+              density: prop.value.density,
+              friction: prop.value.friction,
+              elasticity: prop.value.elasticity,
+              frictionWeight: prop.value.frictionWeight,
+              elasticityWeight: prop.value.elasticityWeight,
+              acousticAbsorption: prop.value.acousticAbsorption,
+            },
+          }
     case 'Ref':
       // Refs travel as Rojo_Target_<Property> attributes.
       return null
     default:
       return null
+  }
+}
+
+/** Instance attribute → Rojo's explicit typed form. */
+function rojoAttrValue(attr: RbxAttrValue): Json {
+  switch (attr.type) {
+    case 'string':
+      return { String: attr.value }
+    case 'bool':
+      return { Bool: attr.value }
+    case 'double':
+      return { Float64: attr.value }
+    case 'Vector3':
+      return { Vector3: [...attr.value] }
+    case 'Color3':
+      return { Color3: [...attr.value] }
+    case 'UDim2':
+      return { UDim2: [[...attr.value[0]], [...attr.value[1]]] }
   }
 }
 
@@ -151,6 +214,15 @@ function projectProps(
   const attributes: Record<string, Json> = {}
 
   if (refTargets.has(inst.id)) attributes.Rojo_Id = inst.id
+
+  for (const attrName of Object.keys(inst.attributes ?? {})) {
+    // Rojo owns the Rojo_* attribute namespace for instance identity; a user
+    // attribute must never be able to forge a ref target.
+    if (attrName.startsWith('Rojo_')) continue
+    attributes[attrName] = rojoAttrValue(inst.attributes![attrName])
+  }
+
+  if (inst.tags && inst.tags.length > 0) properties.Tags = { Tags: [...inst.tags] }
 
   for (const propName of Object.keys(inst.props)) {
     if (propName === 'Name' || skip.has(propName)) continue

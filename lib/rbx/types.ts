@@ -26,6 +26,64 @@ export type RbxPropValue =
   | { type: 'ProtectedString'; value: string }
   /** Reference to another instance by our id (null = nil). */
   | { type: 'Ref'; value: string | null }
+  /** UDim: [scale, offset]. */
+  | { type: 'UDim'; value: [number, number] }
+  /** UDim2: [[xScale, xOffset], [yScale, yOffset]] — the shape every GUI size/position uses. */
+  | { type: 'UDim2'; value: [[number, number], [number, number]] }
+  | { type: 'Vector2'; value: [number, number] }
+  /** Rect: [[minX, minY], [maxX, maxY]]. */
+  | { type: 'Rect'; value: [[number, number], [number, number]] }
+  /** NumberRange: [min, max]. */
+  | { type: 'NumberRange'; value: [number, number] }
+  /** NumberSequence keypoints, time ascending, first time 0 and last time 1. */
+  | { type: 'NumberSequence'; value: NumberKeypoint[] }
+  /** ColorSequence keypoints, time ascending, first time 0 and last time 1. */
+  | { type: 'ColorSequence'; value: ColorKeypoint[] }
+  | { type: 'Font'; value: RbxFont }
+  /** BasePart.CustomPhysicalProperties: 'Default', or the six custom numbers. */
+  | { type: 'PhysicalProperties'; value: 'Default' | RbxCustomPhysicalProperties }
+
+export interface NumberKeypoint {
+  time: number
+  value: number
+  envelope: number
+}
+
+export interface ColorKeypoint {
+  time: number
+  color: [number, number, number]
+}
+
+export interface RbxFont {
+  /** Font family asset, e.g. "rbxasset://fonts/families/GothamSSm.json". */
+  family: string
+  /** Enum.FontWeight item name, e.g. "Regular", "Bold". */
+  weight: string
+  /** Enum.FontStyle item name: "Normal" or "Italic". */
+  style: string
+}
+
+export interface RbxCustomPhysicalProperties {
+  density: number
+  friction: number
+  elasticity: number
+  frictionWeight: number
+  elasticityWeight: number
+  acousticAbsorption: number
+}
+
+/**
+ * Instance attribute value. Attributes are not properties — they are the
+ * user-defined data bag Roblox creators hang off an instance, so the set of
+ * types is deliberately small and JSON-shaped.
+ */
+export type RbxAttrValue =
+  | { type: 'string'; value: string }
+  | { type: 'bool'; value: boolean }
+  | { type: 'double'; value: number }
+  | { type: 'Vector3'; value: [number, number, number] }
+  | { type: 'Color3'; value: [number, number, number] }
+  | { type: 'UDim2'; value: [[number, number], [number, number]] }
 
 export interface RbxInstance {
   /** Stable uuid; doubles as the .rbxlx referent. */
@@ -36,6 +94,10 @@ export interface RbxInstance {
   name: string
   /** Exact Roblox property names: "Size", "CFrame", "Anchored", "Source", ... */
   props: Record<string, RbxPropValue>
+  /** Instance attributes (the creator-defined data bag). Omitted when empty. */
+  attributes?: Record<string, RbxAttrValue>
+  /** CollectionService tags. Omitted when empty. */
+  tags?: string[]
   children: RbxInstance[]
 }
 
@@ -53,6 +115,10 @@ export type PatchOp =
       op: 'update'
       id: string
       props: Record<string, RbxPropValue | null>
+      /** null value removes one attribute. Omitted key = leave the attribute alone. */
+      attributes?: Record<string, RbxAttrValue | null>
+      /** Full replacement of the instance's tag set. Omitted = leave tags alone. */
+      tags?: string[]
     }
   | { op: 'rename'; id: string; name: string }
   | { op: 'delete'; id: string }

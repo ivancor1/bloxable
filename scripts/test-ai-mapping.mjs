@@ -195,6 +195,150 @@ const banned = run(baseTree, 'create_instances', {
 })
 ok(banned.errors.some((e) => e.includes('UnionOperation')), 'banned classes are still refused')
 
+section('UI and effect shorthand')
+const starterGui = baseTree.services.find((s) => s.className === 'StarterGui')
+const ui = run(baseTree, 'create_instances', {
+  instances: [
+    {
+      parentId: starterGui.id,
+      className: 'ScreenGui',
+      name: 'HUD',
+      properties: { ResetOnSpawn: false },
+      children: [
+        {
+          className: 'Frame',
+          name: 'Panel',
+          properties: {
+            Size: [0.5, 0, 0, 120],
+            Position: [0.5, 0, 0, 24],
+            AnchorPoint: [0.5, 0],
+            BackgroundColor3: [0.09, 0.09, 0.11],
+          },
+          children: [
+            {
+              className: 'TextLabel',
+              name: 'Score',
+              properties: { Size: [1, -16, 0, 48], Text: 'Score: 0', FontFace: 'BuilderSans' },
+            },
+            { className: 'UICorner', name: 'Corner', properties: { CornerRadius: [0, 12] } },
+          ],
+        },
+      ],
+    },
+  ],
+})
+eq(ui.errors, [], 'no errors on a shorthand UI create')
+const hudTree = indexTree(ui.tree)
+const panel = [...hudTree.values()].find((e) => e.inst.name === 'Panel')?.inst
+ok(panel, 'the Frame was created')
+eq(panel.props.Size, { type: 'UDim2', value: [[0.5, 0], [0, 120]] }, 'four flat numbers became a UDim2')
+eq(panel.props.AnchorPoint, { type: 'Vector2', value: [0.5, 0] }, 'AnchorPoint became a Vector2')
+const scoreLabel = [...hudTree.values()].find((e) => e.inst.name === 'Score')?.inst
+eq(
+  scoreLabel.props.FontFace,
+  {
+    type: 'Font',
+    value: { family: 'rbxasset://fonts/families/BuilderSans.json', weight: 'Regular', style: 'Normal' },
+  },
+  'a bare family name became a real Font',
+)
+const corner = [...hudTree.values()].find((e) => e.inst.name === 'Corner')?.inst
+eq(corner.props.CornerRadius, { type: 'UDim', value: [0, 12] }, 'CornerRadius became a UDim')
+
+const madeUpFont = run(baseTree, 'create_instances', {
+  instances: [
+    {
+      parentId: starterGui.id,
+      className: 'ScreenGui',
+      name: 'Bad',
+      children: [{ className: 'TextLabel', name: 'T', properties: { FontFace: 'Helvetica' } }],
+    },
+  ],
+})
+ok(
+  madeUpFont.errors.some((e) => e.includes('FontFace')),
+  'a font family Roblox does not ship is rejected rather than silently falling back',
+)
+
+const effects = run(baseTree, 'create_instances', {
+  instances: [
+    {
+      parentId: workspace.id,
+      className: 'Part',
+      name: 'Coin',
+      properties: { Size: [2, 2, 0.4], Anchored: true, CustomPhysicalProperties: { density: 2, elasticity: 0.6 } },
+      attributes: { Points: 5, Rarity: 'gold' },
+      tags: ['Coin', 'Collectible'],
+      children: [
+        {
+          className: 'ParticleEmitter',
+          name: 'Shine',
+          properties: {
+            Lifetime: [0.4, 0.9],
+            Rate: 12,
+            Transparency: [0, 1],
+            Color: [[1, 0.85, 0.2], [1, 0.4, 0]],
+            Size: 0.6,
+          },
+        },
+      ],
+    },
+  ],
+})
+eq(effects.errors, [], 'no errors on a shorthand particle create')
+const coinInst = [...indexTree(effects.tree).values()].find((e) => e.inst.name === 'Coin')?.inst
+eq(coinInst.tags, ['Coin', 'Collectible'], 'tags come through create_instances')
+eq(coinInst.attributes.Points, { type: 'double', value: 5 }, 'a number attribute is typed')
+eq(coinInst.attributes.Rarity, { type: 'string', value: 'gold' }, 'a text attribute is typed')
+eq(
+  coinInst.props.CustomPhysicalProperties.value.acousticAbsorption,
+  1,
+  'PhysicalProperties fills the fields rbx-dom requires',
+)
+const shine = coinInst.children[0]
+eq(shine.props.Lifetime, { type: 'NumberRange', value: [0.4, 0.9] }, 'Lifetime became a NumberRange')
+eq(
+  shine.props.Transparency,
+  {
+    type: 'NumberSequence',
+    value: [
+      { time: 0, value: 0, envelope: 0 },
+      { time: 1, value: 1, envelope: 0 },
+    ],
+  },
+  '[from, to] became a fade',
+)
+eq(
+  shine.props.Size,
+  {
+    type: 'NumberSequence',
+    value: [
+      { time: 0, value: 0.6, envelope: 0 },
+      { time: 1, value: 0.6, envelope: 0 },
+    ],
+  },
+  'one number became a constant sequence',
+)
+eq(shine.props.Color.value.length, 2, 'two colours became a two-keypoint ColorSequence')
+
+section('attributes and tags on update')
+const tagUpdate = run(effects.tree, 'update_instances', {
+  updates: [{ id: coinInst.id, attributes: { Points: 10, Rarity: null }, tags: ['Coin'] }],
+})
+eq(tagUpdate.errors, [], 'no errors updating attributes and tags')
+const retagged = indexTree(tagUpdate.tree).get(coinInst.id).inst
+eq(retagged.attributes.Points, { type: 'double', value: 10 }, 'an attribute can be changed')
+ok(retagged.attributes.Rarity === undefined, 'null removes an attribute')
+eq(retagged.tags, ['Coin'], 'the tag list is replaced wholesale')
+
+const reservedAttr = run(effects.tree, 'update_instances', {
+  updates: [{ id: coinInst.id, attributes: { 'not a name': 1 } }],
+})
+ok(
+  reservedAttr.errors.some((e) => e.includes('letters, numbers and underscores')),
+  'an illegal attribute name is refused with the rule',
+)
+
 section('read tools')
 const outlineOnce = mapToolCall('get_tree_outline', {}, baseTree, reflection)
 ok(

@@ -8,6 +8,7 @@
 // Re-running is safe: existing binaries with the pinned version and an API dump
 // matching the current Studio build are left alone. Pass --force to redo both.
 
+import { arch, platform } from 'node:os'
 import { execFile } from 'node:child_process'
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -28,8 +29,23 @@ const DUMP_META_PATH = path.join(CACHE_DIR, 'api-dump.meta.json')
 
 const FORCE = process.argv.includes('--force')
 
-// Release archives are published per platform; v1 targets the local macOS arm64 dev box.
-const PLATFORM_SLUG = 'macos-aarch64'
+/**
+ * Release archives are published per platform. Rojo and Lune happen to use the
+ * same `<os>-<arch>` slug scheme (verified against both v7.7.0 and v0.10.5
+ * release asset lists), so one lookup covers both.
+ */
+function platformSlug() {
+  const os = { darwin: 'macos', linux: 'linux', win32: 'windows' }[platform()]
+  const cpu = { arm64: 'aarch64', x64: 'x86_64' }[arch()]
+  if (!os || !cpu) {
+    throw new Error(
+      `no pinned rojo/lune build for ${platform()} ${arch()} — install rojo ${ROJO_VERSION} and lune ${LUNE_VERSION} into bin/ by hand`,
+    )
+  }
+  return `${os}-${cpu}`
+}
+
+const PLATFORM_SLUG = platformSlug()
 
 const TOOLS = [
   {

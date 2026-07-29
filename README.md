@@ -11,7 +11,7 @@ echo "OPENAI_API_KEY=sk-..." >> .env.local     # or ANTHROPIC_API_KEY=sk-ant-...
 npm run dev
 ```
 
-`npm run setup` is idempotent and macOS arm64 only (`scripts/setup-tools.mjs`). Without a model key the app still runs — projects, the 3D preview and export all work — but chat returns an explicit key-missing error instead of a reply.
+`npm run setup` is idempotent and picks the right binaries for macOS, Linux or Windows on x86_64 or arm64 (`scripts/setup-tools.mjs`). Without a model key the app still runs — projects, the 3D preview and export all work — but chat returns an explicit key-missing error instead of a reply.
 
 ### Model provider
 
