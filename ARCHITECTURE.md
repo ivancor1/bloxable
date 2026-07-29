@@ -24,6 +24,8 @@ NOTE: this Next.js version may differ from training data — read `node_modules/
 
 **D7 — Viewer math.** Per RESEARCH Part 3: CFrame rows map straight into `Matrix4.set()` (both engines right-handed Y-up, forward −Z; 1 stud = 1 unit; no transpose). Cylinder axis along X; Ball diameter = min(Size); hand-authored Wedge/CornerWedge geometries; Truss = box placeholder (documented). BrickColor table + Color3; material PBR approximations (Neon = emissive, Glass = transmission); hemisphere + directional rig approximating the Baseplate template's Lighting (Technology=3, Brightness=3, TimeOfDay 14:30); sun direction is a disclosed approximation.
 
+**D7b — Screen UI preview (added 2026-07-28).** Roblox's 2D GUI is a percent+pixel box model, which is exactly what CSS already does, so `ScreenGui` trees under `StarterGui` are drawn as real DOM in an overlay above the three.js canvas (`components/viewer/GuiOverlay.tsx`, `guiStyle.ts`) instead of being faked as geometry in the scene. StarterGui is what Roblox copies into each player's PlayerGui on spawn, so it is the honest thing to show. `UDim2` → `calc(% + px)`, `AnchorPoint` → `translate(-%,-%)`, and `UICorner`/`UIPadding`/`UIStroke`/`UIGradient`/`UIListLayout`/`UIAspectRatioConstraint` map to their CSS equivalents. Two disclosed approximations: `TextScaled` has no CSS equivalent, so the element's box is measured after layout and the font size solved from it; and `rbxassetid://` images cannot be fetched from a browser, so image slots draw an honest placeholder rather than a wrong picture. Clicking an element selects it in the outline, same as clicking a part. `BillboardGui`/`SurfaceGui` are not previewed.
+
 **D8 — Model.** Pluggable provider behind `lib/ai/provider.ts`, selected by the key present in `.env.local`: `OPENAI_API_KEY` → OpenAI (default `gpt-5.5`), else `ANTHROPIC_API_KEY` → Anthropic (default `claude-sonnet-5`); either default overridable via `OPENAI_MODEL` / `ANTHROPIC_MODEL`. No key → honest SSE `error` event, never a fake reply. Vendor SDKs are confined to `lib/ai/providers/*`; the loop in `lib/ai/index.ts` (rounds, validation, patch emission, persistence) is provider-agnostic, and `lib/ai/tools.ts` is the single canonical tool list both providers translate from. OpenAI uses Chat Completions — verified live: `max_tokens` is rejected in favour of `max_completion_tokens`, and `temperature` is rejected for any non-default value.
 
 ## Module map & ownership (builders stay inside their columns)
@@ -101,7 +103,7 @@ bin/rojo  bin/lune            # pinned binaries, downloaded by npm run setup (gi
 ## Honest-limitation copy (must appear where relevant; keep to one line each)
 
 - Settings sheet: the 3-step one-time connect flow (Studio mint → copy IDs → API key) — exact copy in B5's brief.
-- Preview footer line in settings sheet: "Preview renders real place data (parts, colors, lighting). Terrain, meshes and GUIs show in Roblox only."
+- Preview footer line in settings sheet: "Preview renders real place data (parts, colors, lighting) and screen UI. Terrain, meshes and image assets show in Roblox only."
 - Paywall: "Upgrade — payments not wired in this build".
 - Publish errors: Roblox messages verbatim; >10 MiB → "Too large for Open Cloud publish (10 MiB) — export instead."
 
