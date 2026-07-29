@@ -1,65 +1,101 @@
-import Image from "next/image";
+'use client'
+
+import { useEffect, useRef, useState } from 'react'
+import { useAppStore } from '@/lib/state/store'
+import Viewer3D from '@/components/viewer/Viewer3D'
+import Sidebar from '@/components/ui/Sidebar'
+import Topbar from '@/components/ui/Topbar'
+import Composer from '@/components/ui/Composer'
+import TranscriptDock from '@/components/ui/TranscriptDock'
+import CodeSheet from '@/components/ui/CodeSheet'
+import SettingsSheet from '@/components/ui/SettingsSheet'
+import PaywallModal from '@/components/ui/PaywallModal'
+import CreateProjectCard from '@/components/ui/CreateProjectCard'
+import SelectionChip from '@/components/ui/SelectionChip'
 
 export default function Home() {
+  const projects = useAppStore((s) => s.projects)
+  const messages = useAppStore((s) => s.messages)
+  const credits = useAppStore((s) => s.credits)
+  const selectionId = useAppStore((s) => s.selectionId)
+  const select = useAppStore((s) => s.select)
+  const loadInitial = useAppStore((s) => s.loadInitial)
+
+  const [ready, setReady] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [dockCollapsed, setDockCollapsed] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [codeSheetId, setCodeSheetId] = useState<string | null>(null)
+  const [paywallOpen, setPaywallOpen] = useState(false)
+
+  const composerRef = useRef<HTMLInputElement>(null)
+  const prevRemaining = useRef(credits.remaining)
+
+  useEffect(() => {
+    loadInitial().finally(() => setReady(true))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Out-of-credits paywall: open exactly when remaining hits zero.
+  useEffect(() => {
+    if (prevRemaining.current > 0 && credits.remaining <= 0) setPaywallOpen(true)
+    prevRemaining.current = credits.remaining
+  }, [credits.remaining])
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey
+      if (mod && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        composerRef.current?.focus()
+        return
+      }
+      if (mod && e.key.toLowerCase() === 'b') {
+        e.preventDefault()
+        setSidebarCollapsed((v) => !v)
+        return
+      }
+      if (e.key === 'Escape') {
+        if (selectionId) {
+          select(null)
+        } else if (codeSheetId) {
+          setCodeSheetId(null)
+        } else if (settingsOpen) {
+          setSettingsOpen(false)
+        } else if (!dockCollapsed) {
+          setDockCollapsed(true)
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selectionId, codeSheetId, settingsOpen, dockCollapsed, select])
+
+  if (!ready) return <div className="empty-shell" />
+
+  if (projects.length === 0) {
+    return <CreateProjectCard />
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="app-shell">
+      <Sidebar collapsed={sidebarCollapsed} onOpenScript={setCodeSheetId} />
+      <main className="main-area">
+        <div className="viewer-slot">
+          <Viewer3D />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        <Topbar onOpenSettings={() => setSettingsOpen(true)} />
+        <SelectionChip />
+        <div className="dock-composer-wrap">
+          {messages.length > 0 && (
+            <TranscriptDock collapsed={dockCollapsed} onToggleCollapse={() => setDockCollapsed((v) => !v)} />
+          )}
+          <Composer inputRef={composerRef} onPaywall={() => setPaywallOpen(true)} />
         </div>
       </main>
+      {codeSheetId && <CodeSheet scriptId={codeSheetId} onClose={() => setCodeSheetId(null)} />}
+      {settingsOpen && <SettingsSheet onClose={() => setSettingsOpen(false)} />}
+      {paywallOpen && <PaywallModal onClose={() => setPaywallOpen(false)} />}
     </div>
-  );
+  )
 }
