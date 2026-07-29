@@ -1,6 +1,10 @@
-// Anthropic (Claude) provider. Behaviour preserved from the original loop:
-// a cached static system block, a volatile context block, and tool_use /
-// tool_result blocks threaded through the messages array.
+// Anthropic (Claude) provider. A cached static system block, a volatile context
+// block, and tool_use / tool_result blocks threaded through the messages array.
+//
+// Caching: the static system block is a fixed breakpoint, and a second
+// breakpoint rides the end of the conversation and moves forward each round.
+// Without the moving one, a 20-round build re-billed every earlier tool call and
+// tool result at full input price on every single round.
 
 import Anthropic, { APIUserAbortError } from '@anthropic-ai/sdk'
 
@@ -35,11 +39,42 @@ export function createAnthropicSession(init: SessionInit): ProviderSession {
   }
   messages.push({ role: 'user', content: init.message })
 
+  // Index of the message currently carrying the rolling cache breakpoint.
+  let cacheMarker = -1
+
+  /**
+   * Moves the conversation cache breakpoint to the newest block-shaped message,
+   * so each round reuses everything written before it. Anthropic allows four
+   * breakpoints; this provider uses two (static system + here).
+   */
+  function rollCacheBreakpoint() {
+    const clear = (index: number) => {
+      const msg = messages[index]
+      if (!msg || !Array.isArray(msg.content)) return
+      for (const block of msg.content) {
+        delete (block as { cache_control?: unknown }).cache_control
+      }
+    }
+
+    const last = messages.length - 1
+    if (last < 0) return
+    const content = messages[last].content
+    if (!Array.isArray(content) || content.length === 0) return
+
+    if (cacheMarker >= 0 && cacheMarker !== last) clear(cacheMarker)
+    ;(content[content.length - 1] as { cache_control?: { type: 'ephemeral' } }).cache_control = {
+      type: 'ephemeral',
+    }
+    cacheMarker = last
+  }
+
   return {
     provider: 'anthropic',
     model: init.model,
 
     async next({ signal, onText }): Promise<ProviderTurn> {
+      rollCacheBreakpoint()
+
       let streamed = ''
       let final: Anthropic.Message
       try {
@@ -98,3 +133,4 @@ export function createAnthropicSession(init: SessionInit): ProviderSession {
     },
   }
 }
+

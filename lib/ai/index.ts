@@ -136,6 +136,12 @@ export async function runChat(
   // ---- prompt ------------------------------------------------------------
   const selection = req.selectionId ? (getInstances(tree, [req.selectionId])[0] ?? null) : null
 
+  // Baseline for outline de-duplication below. Taken through mapToolCall so it
+  // is byte-identical to what get_tree_outline would return: the model is handed
+  // the outline in its context, so an immediate re-read is pure cost.
+  let lastOutlineSent =
+    (mapToolCall('get_tree_outline', {}, tree).readResult?.outline as string | undefined) ?? ''
+
   const session = createSession(provider, {
     staticPrompt: STATIC_SYSTEM_PROMPT,
     contextPrompt: buildContextPrompt({
@@ -149,6 +155,8 @@ export async function runChat(
     })),
     message,
     maxTokens: MAX_TOKENS,
+    // Same project -> same cached prefix on providers that key their cache.
+    cacheKey: `bloxable:${req.projectId}`,
   })
 
   // ---- the loop ----------------------------------------------------------
@@ -199,7 +207,7 @@ export async function runChat(
     const results: ProviderToolResult[] = []
     for (const call of turn.toolCalls) {
       const treeBefore = tree
-      const mapped = mapToolCall(call.name, call.input, tree)
+      const mapped = mapToolCall(call.name, call.input, tree, reflection)
       emit({ type: 'tool_start', name: call.name, summary: mapped.activity })
 
       const errors = [...mapped.errors]
@@ -238,8 +246,18 @@ export async function runChat(
       if (summary.chip) chips.push(summary.chip)
 
       const created = createdFrom(applied)
+      const readResult = { ...(mapped.readResult ?? {}) }
+      // Re-sending an outline the model already has is pure cost: a big place is
+      // several thousand tokens, and a build loop re-reads after every batch.
+      if (typeof readResult.outline === 'string') {
+        if (readResult.outline === lastOutlineSent) {
+          readResult.outline = 'Unchanged since you last read it.'
+        } else {
+          lastOutlineSent = readResult.outline
+        }
+      }
       const payload: Record<string, unknown> = {
-        ...(mapped.readResult ?? {}),
+        ...readResult,
         ...(created.length > 0 ? { created } : {}),
       }
       if (mapped.ops.length > 0) payload.applied = applied.length

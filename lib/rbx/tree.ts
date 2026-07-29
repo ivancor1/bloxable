@@ -3,21 +3,31 @@
 
 import type { PatchOp, RbxInstance, RbxPropValue, RbxTree } from './types'
 
-/** Stable instance id. Doubles as the .rbxlx referent / Rojo ref id. */
+/**
+ * Stable instance id. Doubles as the .rbxlx referent / Rojo ref id.
+ *
+ * Short on purpose: every id is repeated to the model in the outline, in each
+ * tool result and in every later reference to the object, so id length is a
+ * direct token cost on every turn. 8 base36 characters is ~41 bits — with a few
+ * thousand instances in a place the collision odds are vanishingly small, and
+ * `applyPatchOps` rejects a duplicate id outright rather than silently merging.
+ */
+const ID_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz'
+const ID_LENGTH = 8
+
 export function newId(): string {
+  const bytes = new Uint8Array(ID_LENGTH)
   const c: Crypto | undefined = (globalThis as { crypto?: Crypto }).crypto
-  if (c?.randomUUID) return c.randomUUID()
-  // Fallback for non-secure contexts that expose getRandomValues but not randomUUID.
-  const bytes = new Uint8Array(16)
   if (c?.getRandomValues) {
     c.getRandomValues(bytes)
   } else {
-    for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256)
+    for (let i = 0; i < ID_LENGTH; i++) bytes[i] = Math.floor(Math.random() * 256)
   }
-  bytes[6] = (bytes[6] & 0x0f) | 0x40
-  bytes[8] = (bytes[8] & 0x3f) | 0x80
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+  let out = ''
+  // 256 % 36 != 0, so the low ids are marginally more likely. Irrelevant here:
+  // this is a uniqueness token, not a secret.
+  for (const b of bytes) out += ID_ALPHABET[b % ID_ALPHABET.length]
+  return out
 }
 
 export interface TreeEntry {
@@ -357,3 +367,4 @@ export function outline(tree: RbxTree): string {
   for (const service of tree.services) walk(service, 0)
   return lines.join('\n')
 }
+

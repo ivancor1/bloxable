@@ -10,6 +10,13 @@
 // Parameters below were verified against the live API, not assumed:
 //   - `max_tokens` is REJECTED (400) — current models require `max_completion_tokens`.
 //   - `temperature` is REJECTED (400) for any value but the default, so it is not sent.
+//
+// Caching: OpenAI caches on an exact prefix match of the request, so the static
+// prompt and the volatile per-turn context (outline, selection) are sent as TWO
+// system messages, static first. Concatenating them — which this file used to do
+// — put a string that changes every turn at position zero and made every request
+// a cache miss, re-billing the whole system prompt and tool schemas each round.
+// `prompt_cache_key` keeps turns of the same project on the same cache.
 
 import OpenAI, { APIUserAbortError } from 'openai'
 
@@ -39,7 +46,8 @@ export function createOpenAISession(init: SessionInit): ProviderSession {
   }))
 
   const messages: Message[] = [
-    { role: 'system', content: `${init.staticPrompt}\n\n${init.contextPrompt}` },
+    { role: 'system', content: init.staticPrompt },
+    { role: 'system', content: init.contextPrompt },
   ]
   for (const past of init.history) {
     const content = past.content.trim()
@@ -66,6 +74,7 @@ export function createOpenAISession(init: SessionInit): ProviderSession {
             messages,
             tools,
             max_completion_tokens: init.maxTokens,
+            ...(init.cacheKey ? { prompt_cache_key: init.cacheKey } : {}),
           },
           { signal },
         )
@@ -157,3 +166,4 @@ function parseArgs(args: string): unknown {
     return {}
   }
 }
+

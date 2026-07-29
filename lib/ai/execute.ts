@@ -7,6 +7,8 @@
 import type { PatchOp, RbxInstance, RbxPropValue, RbxTree } from '@/lib/rbx/types'
 import { getInstances, indexTree, newId, outline } from '@/lib/rbx/tree'
 import { blockyNpc } from '@/lib/rbx/template'
+import type { Reflection } from '@/lib/rbx/validate'
+import { findProperty } from '@/lib/rbx/validate'
 
 /** Roblox containers whose contents are copied to each client (RESEARCH Part 2). */
 const STARTER_CONTAINERS = new Set([
@@ -33,6 +35,10 @@ const PROP_TYPES = new Set([
 
 /** Tool result payloads are capped so a huge subtree cannot blow up the context. */
 const RESULT_CHAR_LIMIT = 20_000
+
+const IDENTITY_ROT: [number, number, number, number, number, number, number, number, number] = [
+  1, 0, 0, 0, 1, 0, 0, 0, 1,
+]
 
 export interface MappedToolCall {
   /** Ops to validate and apply. Empty for read-only tools. */
@@ -111,26 +117,142 @@ function classNoun(items: Array<{ className: string }>): string {
 
 /* -------------------------------------------------------- property coercion */
 
-function coerceProp(
+/**
+ * Plain value -> RbxPropValue, using the official API dump to decide the type.
+ *
+ * The tagged form ({"type":"Vector3","value":[8,1,8]}) still works and is what
+ * the tree stores, but making the model write it cost 3-5x the tokens of the
+ * bare value for every property of every instance it creates. The server
+ * already knows from the dump that Part.Size is a Vector3 and Part.Material is
+ * an Enum.Material, so it can do the tagging itself.
+ */
+function inferProp(
+  reflection: Reflection,
+  className: string,
   propName: string,
   raw: unknown,
   where: string,
   errors: string[],
 ): RbxPropValue | null {
-  const rec = asRecord(raw)
-  if (!rec) {
+  const prop = findProperty(reflection, className, propName)
+  if (!prop) {
+    errors.push(`${where}: "${propName}" is not a property of ${className}.`)
+    return null
+  }
+
+  const reject = (want: string): null => {
+    errors.push(`${where}: ${className}.${propName} is a ${prop.typeName} — ${want}`)
+    return null
+  }
+  const num = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+
+  if (prop.category === 'Enum') {
+    // itemName is authoritative; the validator resolves the number from the dump.
+    if (typeof raw === 'string') {
+      return { type: 'token', value: 0, enumName: prop.typeName, itemName: raw }
+    }
+    if (num(raw)) return { type: 'token', value: raw, enumName: prop.typeName }
+    return reject(`give the item name as a string, e.g. "Grass".`)
+  }
+
+  if (prop.category === 'Class') {
+    if (raw === null || typeof raw === 'string') return { type: 'Ref', value: raw }
+    return reject('give another object\'s id, or null.')
+  }
+
+  if (prop.category === 'Primitive') {
+    switch (prop.typeName) {
+      case 'bool':
+        return typeof raw === 'boolean' ? { type: 'bool', value: raw } : reject('give true or false.')
+      case 'string':
+        return typeof raw === 'string' ? { type: 'string', value: raw } : reject('give a string.')
+      case 'int':
+      case 'int64':
+      case 'float':
+      case 'double':
+        return num(raw)
+          ? ({ type: prop.typeName, value: raw } as RbxPropValue)
+          : reject('give a number.')
+      default:
+        return reject('this build cannot set that type yet.')
+    }
+  }
+
+  switch (prop.typeName) {
+    case 'Vector3':
+      return isNumberTriple(raw) ? { type: 'Vector3', value: raw } : reject('give [x, y, z].')
+    case 'Color3':
+      return isNumberTriple(raw)
+        ? { type: 'Color3', value: raw }
+        : reject('give [r, g, b] with each channel 0..1.')
+    case 'CFrame': {
+      // Position-only shorthand: the overwhelmingly common case is an unrotated
+      // object, and the identity matrix is nine tokens of nothing.
+      if (isNumberTriple(raw)) return { type: 'CFrame', value: { pos: raw, rot: IDENTITY_ROT } }
+      const v = asRecord(raw)
+      const pos = v?.pos
+      const rot = v?.rot
+      if (isNumberTriple(pos)) {
+        if (rot === undefined) return { type: 'CFrame', value: { pos, rot: IDENTITY_ROT } }
+        if (Array.isArray(rot) && rot.length === 9 && rot.every(num)) {
+          return {
+            type: 'CFrame',
+            value: {
+              pos,
+              rot: rot as [number, number, number, number, number, number, number, number, number],
+            },
+          }
+        }
+      }
+      return reject('give [x, y, z], or {"pos":[x,y,z],"rot":[9 numbers]}.')
+    }
+    case 'ProtectedString':
+      return typeof raw === 'string'
+        ? { type: 'ProtectedString', value: raw }
+        : reject('give the source as a string.')
+    case 'Content':
+    case 'ContentId':
+      return typeof raw === 'string' ? { type: 'string', value: raw } : reject('give a string.')
+    case 'BrickColor':
+      return num(raw) && Number.isInteger(raw)
+        ? { type: 'int', value: raw }
+        : reject('give the BrickColor number.')
+    default:
+      return reject('this build cannot set that type yet.')
+  }
+}
+
+function coerceProp(
+  className: string | null,
+  propName: string,
+  raw: unknown,
+  where: string,
+  errors: string[],
+  reflection: Reflection | null,
+): RbxPropValue | null {
+  const record = asRecord(raw)
+  const tagged =
+    record !== null && typeof record.type === 'string' && PROP_TYPES.has(record.type)
+
+  if (!tagged) {
+    // Bare value: let the API dump say what type it is.
+    if (reflection && className) {
+      return inferProp(reflection, className, propName, raw, where, errors)
+    }
+    if (!record) {
+      errors.push(
+        `${where}: property "${propName}" must be a tagged value like {"type":"bool","value":true}.`,
+      )
+      return null
+    }
     errors.push(
-      `${where}: property "${propName}" must be a tagged value like {"type":"bool","value":true}.`,
+      `${where}: property "${propName}" has unknown type ${JSON.stringify(record.type)}. Use one of: ${[...PROP_TYPES].join(', ')}.`,
     )
     return null
   }
-  const type = asString(rec.type)
-  if (!type || !PROP_TYPES.has(type)) {
-    errors.push(
-      `${where}: property "${propName}" has unknown type ${JSON.stringify(rec.type)}. Use one of: ${[...PROP_TYPES].join(', ')}.`,
-    )
-    return null
-  }
+
+  const rec = record as Record<string, unknown>
+  const type = rec.type as string
 
   switch (type) {
     case 'string':
@@ -234,10 +356,12 @@ function coerceProp(
 }
 
 function coerceProps(
+  className: string | null,
   raw: unknown,
   where: string,
   errors: string[],
   allowNull: boolean,
+  reflection: Reflection | null,
 ): Record<string, RbxPropValue | null> {
   const out: Record<string, RbxPropValue | null> = {}
   const rec = asRecord(raw)
@@ -252,7 +376,7 @@ function coerceProps(
       else errors.push(`${where}: property "${key}" cannot be null when creating an instance.`)
       continue
     }
-    const coerced = coerceProp(key, value, where, errors)
+    const coerced = coerceProp(className, key, value, where, errors, reflection)
     if (coerced) out[key] = coerced
   }
   return out
@@ -260,7 +384,12 @@ function coerceProps(
 
 /* --------------------------------------------------------- instance builder */
 
-function buildInstance(raw: unknown, where: string, errors: string[]): RbxInstance | null {
+function buildInstance(
+  raw: unknown,
+  where: string,
+  errors: string[],
+  reflection: Reflection | null,
+): RbxInstance | null {
   // Any problem anywhere in this subtree rejects the whole item rather than
   // silently creating an instance with properties quietly missing.
   const errorsBefore = errors.length
@@ -280,10 +409,14 @@ function buildInstance(raw: unknown, where: string, errors: string[]): RbxInstan
     return null
   }
 
-  const props = coerceProps(rec.properties, `${where} (${name})`, errors, false) as Record<
-    string,
-    RbxPropValue
-  >
+  const props = coerceProps(
+    className,
+    rec.properties,
+    `${where} (${name})`,
+    errors,
+    false,
+    reflection,
+  ) as Record<string, RbxPropValue>
 
   const children: RbxInstance[] = []
   if (rec.children !== undefined) {
@@ -291,7 +424,7 @@ function buildInstance(raw: unknown, where: string, errors: string[]): RbxInstan
       errors.push(`${where} (${name}): "children" must be an array.`)
     } else {
       rec.children.forEach((child, i) => {
-        const built = buildInstance(child, `${where} (${name}) child ${i}`, errors)
+        const built = buildInstance(child, `${where} (${name}) child ${i}`, errors, reflection)
         if (built) children.push(built)
       })
     }
@@ -354,7 +487,12 @@ function scriptShape(
 
 /* ----------------------------------------------------------------- mapping */
 
-export function mapToolCall(name: string, input: unknown, tree: RbxTree): MappedToolCall {
+export function mapToolCall(
+  name: string,
+  input: unknown,
+  tree: RbxTree,
+  reflection: Reflection | null = null,
+): MappedToolCall {
   const errors: string[] = []
   const args = asRecord(input) ?? {}
 
@@ -396,7 +534,7 @@ export function mapToolCall(name: string, input: unknown, tree: RbxTree): Mapped
           errors.push(`instances[${i}]: "parentId" is required.`)
           return
         }
-        const instance = buildInstance(raw, `instances[${i}]`, errors)
+        const instance = buildInstance(raw, `instances[${i}]`, errors, reflection)
         if (!instance) return
         ops.push({ op: 'create', parentId, instance })
         flatten(instance, created)
@@ -421,7 +559,15 @@ export function mapToolCall(name: string, input: unknown, tree: RbxTree): Mapped
           return
         }
         const errorsBefore = errors.length
-        const props = coerceProps(rec?.props, `updates[${i}]`, errors, true)
+        const target = instanceLabel(tree, id)
+        const props = coerceProps(
+          target?.className ?? null,
+          rec?.props,
+          `updates[${i}]`,
+          errors,
+          true,
+          reflection,
+        )
         // A malformed property voids the whole update — never apply half of it.
         if (errors.length > errorsBefore) return
         // Name is not a serialized property in our tree — it is a rename op.

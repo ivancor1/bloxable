@@ -43,6 +43,12 @@ export interface SessionInit {
   /** The message being answered now. */
   message: string
   maxTokens: number
+  /**
+   * Stable per-project key so the provider's prompt cache routes repeat turns of
+   * the same project to the same cached prefix. Optional: providers that do not
+   * take a cache key ignore it.
+   */
+  cacheKey?: string
 }
 
 export interface ProviderSession {
@@ -53,3 +59,4 @@ export interface ProviderSession {
   /** Appends tool results for the next call to next(). */
   addToolResults(results: ProviderToolResult[]): void
 }
+

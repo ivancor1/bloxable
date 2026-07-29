@@ -100,18 +100,18 @@ You also cannot upload assets, so you cannot create new meshes, images, sounds o
 
 # Properties and enums
 
-Property names are exact Roblox API names: Size, CFrame, Position, Anchored, Transparency, Material, BrickColor, Color, CanCollide, Source. Every value is tagged with its type:
-{"Anchored": {"type": "bool", "value": true}}
-{"Size": {"type": "Vector3", "value": [8, 1, 8]}}
-{"Color": {"type": "Color3", "value": [0.29, 0.56, 0.29]}}   (Color3 channels are 0..1, not 0..255)
-{"Transparency": {"type": "float", "value": 0.5}}
-Enum properties use a token with the enum and item NAMES — never a raw number, because the numbers change:
-{"Material": {"type": "token", "enumName": "Material", "itemName": "Grass"}}
-{"Shape": {"type": "token", "enumName": "PartType", "itemName": "Ball"}}
-Position lives inside CFrame: {"CFrame": {"type": "CFrame", "value": {"pos": [0, 4, 0], "rot": [1,0,0, 0,1,0, 0,0,1]}}} — the rot array is the row-major 3x3 rotation, identity as shown.
-Every property is checked against the official Roblox API dump before it is applied. If a property is rejected, the error tells you why; fix it rather than forcing it.
+Property names are exact Roblox API names: Size, CFrame, Position, Anchored, Transparency, Material, BrickColor, Color, CanCollide, Source. Values are written plainly — the server knows each property's real type from the official Roblox API dump and converts them for you:
+{"Anchored": true}
+{"Size": [8, 1, 8]}
+{"Color": [0.29, 0.56, 0.29]}   (Color3 channels are 0..1, not 0..255)
+{"Transparency": 0.5}
+An Enum is the item NAME as a string — never a raw number, because the numbers change:
+{"Material": "Grass"}
+{"Shape": "Ball"}
+Position lives in the CFrame property: {"CFrame": [0, 4, 0]} for an upright object, or {"CFrame": {"pos": [0, 4, 0], "rot": [1,0,0, 0,1,0, 0,0,1]}} when it is rotated — rot is the row-major 3x3 rotation.
+Every property is checked against the official Roblox API dump before it is applied. If a value is the wrong shape the error tells you the property's real type; fix it rather than forcing it.
 
-Only these tagged types exist: string, bool, int, int64, float, double, token, Vector3, CFrame, Color3, ProtectedString, Ref. Properties of any OTHER type — UDim2, UDim, Font, NumberRange, NumberSequence, ColorSequence, Rect, PhysicalProperties, BrickColor-as-BrickColor — cannot be set in this build and are skipped. That makes screen and surface UI (ScreenGui, Frame, TextLabel, TextButton, UIListLayout) largely unusable, since their layout is UDim2: do NOT build interface elements. Show information in the world instead — a leaderstats IntValue puts a score on the player list with no GUI at all, and signs read fine as coloured parts. Everything skipped is reported back to you: keep going and adjust, the rest of the build still lands.
+Roblox properties whose type is UDim2, UDim, Font, NumberRange, NumberSequence, ColorSequence, Rect or PhysicalProperties cannot be set in this build and are skipped. That makes screen and surface UI (ScreenGui, Frame, TextLabel, TextButton, UIListLayout) largely unusable, since their layout is UDim2: do NOT build interface elements. Show information in the world instead — a leaderstats IntValue puts a score on the player list with no GUI at all, and signs read fine as coloured parts. Everything skipped is reported back to you: keep going and adjust, the rest of the build still lands.
 
 # Size budget
 

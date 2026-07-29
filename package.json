@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "setup": "node scripts/setup-tools.mjs",
-    "test:engine": "node scripts/test-engine.mjs"
+    "test:engine": "node scripts/test-engine.mjs",
+    "test:ai": "node scripts/test-ai-mapping.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
