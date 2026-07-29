@@ -92,7 +92,7 @@ export default function Topbar({
     <div className="topbar">
       <span className="topbar-project">{project?.name ?? ''}</span>
       <div className="topbar-right">
-        <span className="credits-pill">{credits.remaining} left</span>
+        {!credits.unlimited && <span className="credits-pill">{credits.remaining} left</span>}
         {projectId && (
           <a className="btn btn-plain" href={`/api/projects/${projectId}/export`}>
             Export

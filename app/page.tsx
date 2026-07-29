@@ -38,9 +38,11 @@ export default function Home() {
 
   // Out-of-credits paywall: open exactly when remaining hits zero.
   useEffect(() => {
-    if (prevRemaining.current > 0 && credits.remaining <= 0) setPaywallOpen(true)
+    if (!credits.unlimited && prevRemaining.current > 0 && credits.remaining <= 0) {
+      setPaywallOpen(true)
+    }
     prevRemaining.current = credits.remaining
-  }, [credits.remaining])
+  }, [credits.remaining, credits.unlimited])
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

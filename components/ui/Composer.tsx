@@ -29,7 +29,7 @@ export default function Composer({
   function submit() {
     const text = value.trim()
     if (!text || !projectId || streaming) return
-    if (credits.remaining <= 0) {
+    if (!credits.unlimited && credits.remaining <= 0) {
       onPaywall()
       return
     }

@@ -84,14 +84,14 @@ export async function runChat(
   }
 
   // ---- credits (checked before the model is ever called) -----------------
-  let credits: { remaining: number; total: number }
+  let credits: Awaited<ReturnType<typeof getCredits>>
   try {
     credits = await getCredits()
   } catch (err) {
     emit({ type: 'error', message: errorMessage(err) })
     return
   }
-  if (credits.remaining <= 0) {
+  if (!credits.unlimited && credits.remaining <= 0) {
     emit({ type: 'error', message: 'Out of free credits for today.' })
     emit({ type: 'credits', remaining: credits.remaining, total: credits.total })
     return
