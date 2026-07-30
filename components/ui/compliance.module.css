@@ -1,0 +1,358 @@
+/* Guided Maturity & Compliance flow. Scoped module so the shared globals.css
+   stays untouched; every color/radius comes from the DESIGN.md tokens. */
+
+.launcher {
+  position: absolute;
+  top: 64px;
+  right: 16px;
+  z-index: 15;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dotOk {
+  background: var(--ok);
+}
+
+.dotStale {
+  background: var(--warn);
+}
+
+.panel {
+  width: 560px;
+  max-width: 94vw;
+}
+
+.progressTrack {
+  height: 3px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 2px 18px 0;
+  flex-shrink: 0;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+.stepLabel {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.question {
+  margin-bottom: 22px;
+}
+
+.qText {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.45;
+  margin: 0 0 4px;
+}
+
+.qPlain {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin: 0 0 10px;
+}
+
+.qHelp {
+  margin: 0 0 10px;
+}
+
+.qHelp summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  list-style: none;
+}
+
+.qHelp summary::-webkit-details-marker {
+  display: none;
+}
+
+.qHelp p {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  line-height: 1.55;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: var(--bg-soft);
+  border-radius: var(--radius-control);
+}
+
+.optRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.optCol {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.opt {
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--bg);
+  transition: border-color 0.1s ease, background 0.1s ease;
+}
+
+.opt:hover {
+  border-color: var(--border-strong);
+}
+
+.optSelected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+
+.optHint {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin-top: 3px;
+}
+
+.optNote {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--warn);
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+.why {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-control);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.whyAsk {
+  border-color: rgba(217, 119, 6, 0.35);
+  background: rgba(217, 119, 6, 0.06);
+}
+
+.whyTag {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-right: 6px;
+  color: var(--accent-deep);
+}
+
+.whyAsk .whyTag {
+  color: var(--warn);
+}
+
+.evidence {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.evidence li {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+.nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.banner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-control);
+  border: 1px solid rgba(217, 119, 6, 0.35);
+  background: rgba(217, 119, 6, 0.06);
+  font-size: 12.5px;
+  color: var(--text);
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.notice {
+  padding: 10px 12px;
+  border-radius: var(--radius-control);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-cloud);
+  font-size: 12.5px;
+  color: var(--text);
+  line-height: 1.55;
+  margin-bottom: 14px;
+}
+
+.quote {
+  border-left: 2px solid var(--accent);
+  padding: 2px 0 2px 10px;
+  margin: 10px 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  font-style: italic;
+  line-height: 1.55;
+}
+
+.labelCard {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  padding: 16px;
+  margin-bottom: 16px;
+  background: var(--bg-soft);
+}
+
+.labelKicker {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 600;
+}
+
+.labelName {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--accent-deep);
+  margin: 2px 0 6px;
+}
+
+.labelNameRestricted {
+  color: var(--warn);
+}
+
+.labelDesc {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.sectionHead {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 600;
+  margin: 18px 0 8px;
+}
+
+.reasonList {
+  margin: 0;
+  padding: 0 0 0 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.mirror {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+
+.mirrorRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 10px;
+  font-size: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.mirrorRow:first-child {
+  border-top: none;
+}
+
+.mirrorCat {
+  background: var(--bg-soft);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.mirrorQ {
+  color: var(--text-dim);
+  line-height: 1.45;
+  min-width: 0;
+}
+
+.mirrorA {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.fine {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  line-height: 1.55;
+  margin: 14px 0 0;
+}
+
+.linkBtn {
+  text-decoration: none;
+}
+
+.verify {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}

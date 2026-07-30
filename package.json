@@ -11,6 +11,7 @@
     "test:engine": "node scripts/test-engine.mjs",
     "test:ai": "node scripts/test-ai-mapping.mjs",
     "test:eligibility": "node scripts/test-eligibility.mjs",
+    "test:compliance": "node scripts/test-compliance.mjs",
     "setup:universe": "node scripts/setup-universe.mjs",
     "mint:place": "node scripts/mint-place.mjs",
     "test:model": "node scripts/test-model.mjs"
