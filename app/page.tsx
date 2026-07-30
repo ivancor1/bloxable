@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import type { ProjectMeta } from '@/lib/rbx/types'
 import { useAppStore } from '@/lib/state/store'
 import SettingsSheet from '@/components/ui/SettingsSheet'
+import HelperPluginConsent from '@/components/ui/HelperPluginConsent'
 import { relativeTime } from '@/components/ui/relativeTime'
 import { IconGear, IconPlus } from '@/components/ui/icons'
 import { APP_NAME } from '@/lib/config'
@@ -145,6 +146,8 @@ export default function HomePage() {
           </>
         )}
       </section>
+
+      <HelperPluginConsent />
 
       {settingsOpen && <SettingsSheet onClose={() => setSettingsOpen(false)} />}
     </div>
