@@ -7,6 +7,7 @@ import type { RbxInstance } from '@/lib/rbx/types'
 import { IconChevronDown, IconPlus } from './icons'
 import { isScriptInstance, scriptDisplayName } from './scriptDisplay'
 import { relativeTime } from './relativeTime'
+import PublishReadiness from './PublishReadiness'
 
 function ProjectSwitcher() {
   const router = useRouter()
@@ -174,6 +175,7 @@ export default function Sidebar({
         <ProjectSwitcher />
         <Threads />
         <Files onOpenScript={onOpenScript} />
+        <PublishReadiness />
       </div>
     </div>
   )
