@@ -73,12 +73,23 @@ export interface UploadedAsset {
   state?: string
 }
 
+/**
+ * Roblox accepted the upload but was still processing it when the poll budget
+ * ran out. NOT a failure: the model almost always lands in the inventory a
+ * moment later, so the caller must report "still processing", never "failed".
+ */
+export interface PendingUpload {
+  pending: true
+  operationId: string
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
  * Uploads a .rbxm as a new Model asset owned by `userId`, then waits for the
  * operation to finish so the caller can report a real assetId (and moderation
- * result) instead of an operation id nobody can use.
+ * result) instead of an operation id nobody can use. Resolves to PendingUpload
+ * when Roblox is still processing after the poll budget.
  */
 export async function uploadModelAsset(args: {
   accessToken: string
@@ -86,7 +97,7 @@ export async function uploadModelAsset(args: {
   fileBytes: Uint8Array
   displayName: string
   description: string
-}): Promise<UploadedAsset> {
+}): Promise<UploadedAsset | PendingUpload> {
   const form = new FormData()
   form.append(
     'request',
@@ -144,9 +155,15 @@ export async function uploadModelAsset(args: {
 /**
  * Polls one asset operation to completion. A freshly created operation can
  * answer with an empty error envelope for a second or two before it exists —
- * observed live — so that shape is a retry, not a failure.
+ * observed live — so that shape is a retry, not a failure. When the budget
+ * runs out with the operation still running, that is reported as a
+ * PendingUpload — the upload was accepted and usually finishes on Roblox's
+ * side; pretending it failed would just push the user into uploading twice.
  */
-export async function waitForOperation(accessToken: string, operationId: string): Promise<UploadedAsset> {
+export async function waitForOperation(
+  accessToken: string,
+  operationId: string,
+): Promise<UploadedAsset | PendingUpload> {
   const deadline = Date.now() + POLL_BUDGET_MS
   let lastText = ''
 
@@ -192,10 +209,7 @@ export async function waitForOperation(accessToken: string, operationId: string)
     }
   }
 
-  throw new RobloxError(
-    `Roblox is still processing the upload after 90s. It usually lands in your inventory shortly.${lastText ? ` Last status: ${lastText.slice(0, 200)}` : ''}`,
-    504,
-  )
+  return { pending: true, operationId }
 }
 
 /** Where the user actually finds the model afterwards. */

@@ -4,7 +4,12 @@ import { useEffect, useRef, useState } from 'react'
 import type { ProjectMeta } from '@/lib/rbx/types'
 import { useAppStore } from '@/lib/state/store'
 import { IconGear, IconRedo, IconUndo } from './icons'
-import EjectModal, { type EjectResult } from './EjectModal'
+import EjectModal from './EjectModal'
+import {
+  networkFailureOutcome,
+  outcomeFromEjectResponse,
+  type EjectOutcome,
+} from '@/lib/roblox/eject-status'
 
 type Toast = { kind: 'ok' | 'err'; text: string; href?: string }
 
@@ -40,7 +45,7 @@ export default function Topbar({
   const project = projects.find((p) => p.id === projectId)
   const [publishing, setPublishing] = useState(false)
   const [ejecting, setEjecting] = useState(false)
-  const [eject, setEject] = useState<EjectResult | null>(null)
+  const [eject, setEject] = useState<EjectOutcome | null>(null)
   const [toast, setToast] = useState<Toast | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -131,24 +136,12 @@ export default function Topbar({
     try {
       const res = await fetch(`/api/projects/${projectId}/eject`, { method: 'POST' })
       const data: unknown = await res.json().catch(() => null)
-      if (!res.ok || !isRecord(data) || typeof data.assetId !== 'string') {
-        showToast({ kind: 'err', text: extractMessage(data, 'Upload to Roblox failed') })
-        return
-      }
-      if (isRecord(data.meta)) setProjectMeta(data.meta as unknown as ProjectMeta)
-      setEject({
-        assetId: data.assetId,
-        assetUrl: typeof data.assetUrl === 'string' ? data.assetUrl : `https://create.roblox.com/store/asset/${data.assetId}`,
-        moderationState: typeof data.moderationState === 'string' ? data.moderationState : null,
-        projectName: project?.name ?? 'Your game',
-        serviceFolders: Array.isArray(data.serviceFolders) ? (data.serviceFolders as string[]) : [],
-        droppedInstances: Array.isArray(data.droppedInstances) ? (data.droppedInstances as string[]) : [],
-        servicesWithProperties: Array.isArray(data.servicesWithProperties)
-          ? (data.servicesWithProperties as string[])
-          : [],
-      })
-    } catch (e) {
-      showToast({ kind: 'err', text: e instanceof Error ? e.message : 'Upload to Roblox failed' })
+      if (res.ok && isRecord(data) && isRecord(data.meta)) setProjectMeta(data.meta as unknown as ProjectMeta)
+      // Success, still-processing and every failure all land in the modal —
+      // the mapping (and its copy) lives in lib/roblox/eject-status.
+      setEject(outcomeFromEjectResponse(res.status, data, project?.name ?? 'Your game'))
+    } catch {
+      setEject(networkFailureOutcome(project?.name ?? 'Your game'))
     } finally {
       setEjecting(false)
     }
@@ -216,7 +209,7 @@ export default function Topbar({
           </div>
         )}
       </div>
-      {eject && <EjectModal result={eject} onClose={() => setEject(null)} />}
+      {eject && <EjectModal outcome={eject} onClose={() => setEject(null)} onOpenSettings={onOpenSettings} />}
     </div>
   )
 }

@@ -87,6 +87,14 @@ behind, and the result panel says so after each upload.
 with Lune: one root Model, Workspace content directly under it, a Folder per service, Motor6D
 refs still wired.
 
+Every eject ends in one of three honest states: **uploaded** (with the Studio steps and the
+moderation verdict — a Rejected review is said out loud, not buried in a status suffix),
+**still processing** (HTTP 202 when Roblox takes longer than the 90s poll budget — the upload
+usually lands moments later, so it is never reported as a failure), or **failed** with a
+stable `code` (`not_connected`, `signin_expired`, `rate_limited`, …) that the modal turns
+into plain language plus one concrete next step, with Roblox's own message shown verbatim
+underneath. `npm run test:eject` pins that mapping against response shapes captured live.
+
 ## What works today
 
 - Projects persisted on disk under `data/` (atomic writes), seeded from the real Studio Baseplate template.
