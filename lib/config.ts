@@ -32,8 +32,17 @@ export const LUNE_VERSION = '0.10.5'
  * path). asset:read + asset:write are both inside the OAuth2 "Creation &
  * Productivity Tools" category — verified in RESEARCH.md Part 1 Q3b — and are
  * what the Assets API needs to upload a model into that user's inventory.
+ *
+ * user.advanced:read unlocks premium/idVerified/createTime on Cloud v2
+ * GET /users/{id} for the publish-eligibility check (lib/roblox/eligibility).
+ * Without it Roblox silently answers false for both flags rather than
+ * erroring (devforum.roblox.com/t/-/3116938), so eligibility treats an
+ * ungranted scope as 'unknown', never as false. Consent stays deferred: the
+ * connect flow only runs when the user acts (publish/eject), never at first
+ * run. Accounts connected before this scope existed report `needsConsent`
+ * until they reconnect.
  */
-export const ROBLOX_OAUTH_SCOPES = ['openid', 'profile', 'asset:read', 'asset:write']
+export const ROBLOX_OAUTH_SCOPES = ['openid', 'profile', 'asset:read', 'asset:write', 'user.advanced:read']
 
 /** Assets API cap for Model uploads (bytes) — RESEARCH.md Part 1 Q6. */
 export const ASSET_SIZE_LIMIT = 20 * 1024 * 1024

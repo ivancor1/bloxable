@@ -390,6 +390,8 @@ interface SettingsFile {
   robloxAccount?: RobloxAccount
   /** In-flight OAuth handshake: CSRF state + PKCE verifier, single use. */
   oauthPending?: OauthPending
+  /** Latest signed-in-Studio-user report from the helper plugin. */
+  studioUser?: StudioUserReport
   /** The operator's universe — all projects publish into places inside it. */
   universeId?: string
   /** Pre-created placeIds inside that universe; projects are assigned one each. */
@@ -582,6 +584,32 @@ export async function clearRobloxAccount(): Promise<void> {
   return withLock(settingsPath(), async () => {
     const raw = (await readJson<SettingsFile>(settingsPath())) ?? {}
     delete raw.robloxAccount
+    await writeJsonAtomic(settingsPath(), raw)
+  })
+}
+
+// ---------------------------------------------------------------------------
+// The signed-in Studio user, reported by plugin/BloxableHelper.luau over
+// POST /api/roblox/eligibility/studio-user. One report at a time — only the
+// latest matters for eligibility. userId 0 is a real report meaning Studio
+// was signed out, distinct from no report at all (null).
+// ---------------------------------------------------------------------------
+
+export interface StudioUserReport {
+  /** StudioService:GetUserId() — 0 when Studio is signed out. */
+  userId: number
+  reportedAt: string
+}
+
+export async function getStudioUser(): Promise<StudioUserReport | null> {
+  const raw = (await readJson<SettingsFile>(settingsPath())) ?? {}
+  return raw.studioUser ?? null
+}
+
+export async function saveStudioUser(report: StudioUserReport): Promise<void> {
+  return withLock(settingsPath(), async () => {
+    const raw = (await readJson<SettingsFile>(settingsPath())) ?? {}
+    raw.studioUser = report
     await writeJsonAtomic(settingsPath(), raw)
   })
 }
