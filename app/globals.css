@@ -503,6 +503,12 @@ a {
     0 4px 12px rgba(44, 79, 240, 0.3);
 }
 
+/* Anchor for the self-contained Open in Studio button + its toast. */
+.open-studio {
+  position: relative;
+  display: inline-flex;
+}
+
 .toast {
   position: absolute;
   top: calc(100% + 8px);
