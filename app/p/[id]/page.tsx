@@ -12,6 +12,7 @@ import CodeSheet from '@/components/ui/CodeSheet'
 import SettingsSheet from '@/components/ui/SettingsSheet'
 import PaywallModal from '@/components/ui/PaywallModal'
 import SelectionChip from '@/components/ui/SelectionChip'
+import ComplianceFlow from '@/components/ui/ComplianceFlow'
 
 /** The editor. The home page (/) creates projects and links here; an optional
  *  ?prompt= carries the hero-bar description in as the first chat message. */
@@ -121,6 +122,7 @@ export default function EditorPage() {
           <Viewer3D />
         </div>
         <Topbar onOpenSettings={() => setSettingsOpen(true)} />
+        <ComplianceFlow />
         <SelectionChip />
         <div className="dock-composer-wrap">
           {messages.length > 0 && (
