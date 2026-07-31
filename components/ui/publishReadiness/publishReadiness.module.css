@@ -1,0 +1,302 @@
+/* Publish-readiness surface — DESIGN.md light system, tokens from
+   app/globals.css. Tone rules: green = confirmed by Roblox, amber = a real
+   to-do, gray = unknown / only-you-can-check. Unknown is NEVER red — an
+   unchecked fact is not a failure. */
+
+/* --- Sidebar entry (the single mount point) ----------------------------- */
+
+.entry {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  text-align: left;
+}
+
+.entry:hover {
+  background: var(--bg-soft);
+}
+
+.entryLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entryStatus {
+  font-size: 11px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+/* --- Tone dots ----------------------------------------------------------- */
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dotOk {
+  background: var(--ok);
+}
+
+.dotTodo {
+  background: var(--warn);
+}
+
+.dotUnknown,
+.dotSelf {
+  background: transparent;
+  border: 1.5px solid var(--border-strong);
+}
+
+/* --- Panel body ----------------------------------------------------------- */
+
+.card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-card);
+  padding: 16px;
+  margin-bottom: 14px;
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.cardTitle {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.pill {
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--radius-pill);
+  padding: 3px 10px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.pillOk {
+  color: var(--ok);
+  background: rgba(22, 163, 74, 0.08);
+}
+
+.pillTodo {
+  color: var(--warn);
+  background: rgba(217, 119, 6, 0.08);
+}
+
+.pillUnknown {
+  color: var(--text-dim);
+  background: var(--bg-soft);
+}
+
+.hookHeadline {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.4;
+  margin: 0 0 6px;
+}
+
+.body {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.hookSteps {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  list-style: decimal outside;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.statusLine {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text);
+  margin-top: 12px;
+}
+
+.statusLine .dot {
+  transform: translateY(-1px);
+}
+
+.groupLabel {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 600;
+  margin: 16px 0 2px;
+}
+
+.fact {
+  display: flex;
+  gap: 9px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.fact:last-child {
+  border-bottom: none;
+  padding-bottom: 2px;
+}
+
+.fact .dot {
+  margin-top: 5px;
+}
+
+.factLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.factDetail {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-left: 6px;
+  font-weight: 400;
+}
+
+.factText {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.55;
+  margin-top: 1px;
+}
+
+.link {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.steps {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  list-style: decimal outside;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.note {
+  background: var(--bg-soft);
+  border-radius: var(--radius-control);
+  padding: 10px 12px;
+  margin-top: 14px;
+}
+
+.noteTitle {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0 0 3px;
+}
+
+.reasons {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  list-style: disc outside;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.aside {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.55;
+  margin: 10px 0 0;
+}
+
+.footer {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  line-height: 1.6;
+}
+
+.docsList {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 8px 0 10px;
+}
+
+.checkedRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.errorBox {
+  border: 1px solid rgba(207, 68, 68, 0.3);
+  background: rgba(207, 68, 68, 0.06);
+  border-radius: var(--radius-control);
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.errorMessage {
+  color: var(--err);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  display: block;
+  margin-top: 4px;
+  word-break: break-word;
+}
+
+.loadingRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  padding: 4px 0 12px;
+}
