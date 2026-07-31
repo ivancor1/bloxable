@@ -23,6 +23,7 @@ import {
   type EjectOutcome,
   type EjectProcessing,
   type EjectUploaded,
+  type StudioChain,
 } from '@/lib/roblox/eject-status'
 
 function list(items: string[]): string {
@@ -41,7 +42,77 @@ function ServiceFoldersStep({ folders }: { folders: string[] }) {
   )
 }
 
-function Uploaded({ result }: { result: EjectUploaded }) {
+/**
+ * The Studio chain, rendered inside a success state. `opened` leads with the
+ * one remaining step; `unavailable`/`failed` say why, verbatim, and hand over
+ * to the Toolbox path. The place file Studio opens is the FULL game — services
+ * included — so this path has none of the model's folder-moving caveats.
+ */
+function StudioChainStatus({ studio, onRetry }: { studio: StudioChain; onRetry?: () => void }) {
+  if (studio.kind === 'launching') {
+    return <p>Roblox Studio is opening with your game loaded…</p>
+  }
+  if (studio.kind === 'opened') {
+    return (
+      <>
+        <p>
+          Roblox Studio is opening with your whole game loaded — nothing to drag in, nothing to move around.
+        </p>
+        <p>
+          <strong>One step left: File → Publish to Roblox.</strong> That puts it on your account, under your name.
+        </p>
+      </>
+    )
+  }
+  return (
+    <>
+      <p>
+        Studio didn&apos;t open on this computer{studio.kind === 'unavailable' ? '' : ' this time'}.
+        {onRetry && (
+          <>
+            {' '}
+            <button className="btn btn-plain" onClick={onRetry}>
+              Try again
+            </button>
+          </>
+        )}
+      </p>
+      <p className="eject-detail dim">{studio.message}</p>
+    </>
+  )
+}
+
+/**
+ * The Toolbox route — the fallback when Studio is not installed (and there for
+ * anyone who prefers it). This is the MODEL path, so the folder-moving and
+ * service-property caveats belong here and only here.
+ */
+function ToolboxSteps({ result, open }: { result: EjectUploaded; open: boolean }) {
+  return (
+    <details className="eject-toolbox" open={open}>
+      <summary>The Toolbox way — works on any computer with Studio</summary>
+      <ol className="eject-steps">
+        <li>Open Roblox Studio → Toolbox → Inventory → My Models.</li>
+        <li>
+          Drag {result.projectName} into your place — it is the newest model there.
+        </li>
+        <ServiceFoldersStep folders={result.serviceFolders} />
+        <li>File → Publish to Roblox. Your experience, on your account.</li>
+      </ol>
+      {result.servicesWithProperties.length > 0 && (
+        <p className="dim">
+          {list(result.servicesWithProperties)} settings stay behind on this route — a model carries instances, not
+          service properties. Set those in Studio. (The place file Studio opens directly has them already.)
+        </p>
+      )}
+      {result.droppedInstances.length > 0 && (
+        <p className="dim">Left out of the model (it cannot hold them): {list(result.droppedInstances)}.</p>
+      )}
+    </details>
+  )
+}
+
+function Uploaded({ result, studio, onRetryStudio }: { result: EjectUploaded; studio: StudioChain | null; onRetryStudio?: () => void }) {
   const where = result.username ? `your Roblox inventory (@${result.username})` : 'your Roblox inventory'
 
   if (result.moderation.verdict === 'rejected') {
@@ -73,18 +144,14 @@ function Uploaded({ result }: { result: EjectUploaded }) {
         {result.moderation.label ? ` · ${result.moderation.label}` : ''}
       </p>
 
-      <ol className="eject-steps">
-        <li>Open Roblox Studio → Toolbox → Inventory → My Models.</li>
-        <li>
-          Drag {result.projectName} into your place — it is the newest model there.
-        </li>
-        <ServiceFoldersStep folders={result.serviceFolders} />
-        <li>File → Publish to Roblox. Your experience, on your account.</li>
-      </ol>
+      {studio && <StudioChainStatus studio={studio} onRetry={onRetryStudio} />}
+
+      <ToolboxSteps result={result} open={!studio || (studio.kind !== 'opened' && studio.kind !== 'launching')} />
 
       {result.moderation.verdict === 'reviewing' && (
         <p className="dim">
-          Roblox is still checking it over — it appears in your Toolbox once that clears, usually within minutes.
+          Roblox is still checking the model copy over — it appears in your Toolbox once that clears, usually within
+          minutes. Publishing the place Studio opened is not held up by that.
         </p>
       )}
       {result.moderation.verdict === 'unknown' && result.moderation.label && (
@@ -93,20 +160,11 @@ function Uploaded({ result }: { result: EjectUploaded }) {
           it on Roblox.
         </p>
       )}
-      {result.servicesWithProperties.length > 0 && (
-        <p className="dim">
-          {list(result.servicesWithProperties)} settings stay behind — a model carries instances, not service
-          properties. Set those in Studio.
-        </p>
-      )}
-      {result.droppedInstances.length > 0 && (
-        <p className="dim">Left out (a model cannot hold them): {list(result.droppedInstances)}.</p>
-      )}
     </>
   )
 }
 
-function Processing({ result }: { result: EjectProcessing }) {
+function Processing({ result, studio, onRetryStudio }: { result: EjectProcessing; studio: StudioChain | null; onRetryStudio?: () => void }) {
   const where = result.username ? `your Roblox inventory (@${result.username})` : 'your Roblox inventory'
   return (
     <>
@@ -117,14 +175,21 @@ function Processing({ result }: { result: EjectProcessing }) {
         Roblox accepted the upload and is still working on it
         {result.operationId ? ` (operation ${result.operationId})` : ''}.
       </p>
-      <p>
-        Give it a few minutes, then open Roblox Studio → Toolbox → Inventory → My Models — it lands there when Roblox
-        finishes. Drag it into your place and File → Publish to Roblox.
-      </p>
+
+      {studio && <StudioChainStatus studio={studio} onRetry={onRetryStudio} />}
+      {(!studio || (studio.kind !== 'opened' && studio.kind !== 'launching')) && (
+        <p>
+          Give it a few minutes, then open Roblox Studio → Toolbox → Inventory → My Models — it lands there when Roblox
+          finishes. Drag it into your place and File → Publish to Roblox.
+        </p>
+      )}
+
       {result.serviceFolders.length > 0 && (
         <p className="dim">
-          Once it arrives, move the {list(result.serviceFolders)} folder{result.serviceFolders.length === 1 ? '' : 's'}{' '}
-          into the service{result.serviceFolders.length === 1 ? '' : 's'} they are named after.
+          If you go the Toolbox way: once it arrives, move the {list(result.serviceFolders)} folder
+          {result.serviceFolders.length === 1 ? '' : 's'} into the service
+          {result.serviceFolders.length === 1 ? '' : 's'} they are named after. (The place Studio opens directly needs
+          none of that.)
         </p>
       )}
       <p className="dim">Sending again later is safe, but every send makes a separate model.</p>
@@ -134,20 +199,25 @@ function Processing({ result }: { result: EjectProcessing }) {
 
 export default function EjectModal({
   outcome,
+  studio = null,
   onClose,
   onOpenSettings,
+  onRetryStudio,
 }: {
   outcome: EjectOutcome
+  /** State of the automatic open-in-Studio chain; null when it never started. */
+  studio?: StudioChain | null
   onClose: () => void
   onOpenSettings?: () => void
+  onRetryStudio?: () => void
 }) {
   const failure = outcome.kind === 'failed' ? ejectFailureCopy(outcome.code) : null
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-card eject-card" onClick={(e) => e.stopPropagation()}>
-        {outcome.kind === 'uploaded' && <Uploaded result={outcome} />}
-        {outcome.kind === 'processing' && <Processing result={outcome} />}
+        {outcome.kind === 'uploaded' && <Uploaded result={outcome} studio={studio} onRetryStudio={onRetryStudio} />}
+        {outcome.kind === 'processing' && <Processing result={outcome} studio={studio} onRetryStudio={onRetryStudio} />}
         {outcome.kind === 'failed' && failure && (
           <>
             <p>
