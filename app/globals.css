@@ -1285,8 +1285,18 @@ a {
 
 /* Eject result modal */
 .eject-card {
-  max-width: 460px;
+  width: 460px;
+  max-width: 90vw;
   text-align: left;
+}
+
+/* The server's / Roblox's message, verbatim — small, visible, never hidden. */
+.eject-card .eject-detail {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: 8px 10px;
+  margin-top: 4px;
+  word-break: break-word;
 }
 
 .eject-steps {

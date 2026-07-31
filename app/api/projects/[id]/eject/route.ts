@@ -6,7 +6,8 @@ import { getAccessToken } from '@/lib/roblox/oauth'
 import { assetUrl, uploadModelAsset } from '@/lib/roblox/assets'
 import { RobloxError } from '@/lib/roblox/discover'
 import { ASSET_SIZE_LIMIT } from '@/lib/config'
-import { errorResponse, jsonError } from '@/app/api/_lib/http'
+import { ejectErrorCodeForStatus, type EjectErrorCode } from '@/lib/roblox/eject-status'
+import { errorResponse } from '@/app/api/_lib/http'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -15,6 +16,16 @@ export const runtime = 'nodejs'
 const MAX_DISPLAY_NAME = 50
 
 const TOO_LARGE_MESSAGE = 'Too large for a Roblox model upload (20 MiB) — export instead.'
+
+/**
+ * Every eject failure carries a stable `code` assigned HERE, where the route
+ * still knows why it failed — a missing connection and a Roblox-rejected token
+ * both surface as auth errors otherwise. The UI maps codes to plain language
+ * (lib/roblox/eject-status.ts) and shows `error` verbatim as the detail.
+ */
+function fail(message: string, status: number, code: EjectErrorCode): NextResponse {
+  return NextResponse.json({ error: message, code }, { status })
+}
 
 /**
  * Eject: build the project as a Model and upload it into the USER'S OWN Roblox
@@ -40,12 +51,13 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   const account = await getRobloxAccount()
   if (!account) {
-    return jsonError('Connect your Roblox account first — Settings → Your Roblox account.', 401)
+    return fail('Connect your Roblox account first — Settings → Your Roblox account.', 401, 'not_connected')
   }
   if (!account.scope.includes('asset:write')) {
-    return jsonError(
+    return fail(
       'Your Roblox connection is missing the asset:write permission — disconnect and connect again to grant it.',
       403,
+      'missing_upload_permission',
     )
   }
 
@@ -53,7 +65,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   try {
     ;({ token } = await getAccessToken())
   } catch (err) {
-    if (err instanceof RobloxError) return jsonError(err.message, err.status)
+    if (err instanceof RobloxError) {
+      // getAccessToken throws exactly two ways: the server has no OAuth app
+      // (500) or the sign-in could not be refreshed (401 — connection cleared).
+      return fail(err.message, err.status, err.status === 500 ? 'not_configured' : 'signin_expired')
+    }
     return errorResponse(err)
   }
 
@@ -61,11 +77,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   try {
     built = await buildModel(id)
   } catch (err) {
-    return errorResponse(err)
+    return fail(err instanceof Error ? err.message : 'Model build failed', 500, 'build_failed')
   }
 
   if (built.bytes > ASSET_SIZE_LIMIT) {
-    return jsonError(TOO_LARGE_MESSAGE, 413)
+    return fail(TOO_LARGE_MESSAGE, 413, 'too_large')
   }
 
   const fileBytes = await fs.readFile(built.filePath)
@@ -80,8 +96,26 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       description: `${meta.name} — built with Bloxable.`,
     })
   } catch (err) {
-    if (err instanceof RobloxError) return jsonError(err.message, err.status)
+    if (err instanceof RobloxError) return fail(err.message, err.status, ejectErrorCodeForStatus(err.status))
     return errorResponse(err)
+  }
+
+  if ('pending' in uploaded) {
+    // Roblox accepted the upload but was still processing at the poll budget.
+    // Honest 202: no assetId yet, so nothing is stamped on the project and the
+    // UI says "still processing", never "done" and never "failed".
+    return NextResponse.json(
+      {
+        pending: true,
+        operationId: uploaded.operationId,
+        account: { userId: account.userId, username: account.username ?? null },
+        bytes: built.bytes,
+        serviceFolders: built.serviceFolders,
+        droppedInstances: built.droppedInstances,
+        servicesWithProperties: built.servicesWithProperties,
+      },
+      { status: 202 },
+    )
   }
 
   let updatedMeta = meta
