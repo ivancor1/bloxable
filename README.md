@@ -59,6 +59,8 @@ Operator setup, once:
 ```bash
 # create.roblox.com/dashboard/credentials?activeTab=OAuthTab → new OAuth app
 # permissions: asset:read + asset:write (Creation & Productivity Tools category)
+#              + user.advanced:read (lets the publish-eligibility check read
+#                premium/idVerified/createTime; without it those stay "unknown")
 # redirect URL: http://localhost:3000/api/roblox/oauth/callback
 ROBLOX_OAUTH_CLIENT_ID=...
 ROBLOX_OAUTH_CLIENT_SECRET=...
@@ -86,6 +88,20 @@ behind, and the result panel says so after each upload.
 `npm run test:model` builds a model with the real toolchain and verifies it by deserializing
 with Lune: one root Model, Workspace content directly under it, a Folder per service, Motor6D
 refs still wired.
+
+## Publish eligibility — what Roblox will actually let you do
+
+`GET /api/roblox/eligibility` answers which audiences the user could publish to and what
+stands in the way, as a typed tier object in which everything unverifiable says `unknown`
+(or `not-checkable`) instead of guessing. Three sources, each optional: the signed-in Studio
+user reported by `plugin/BloxableHelper.luau` (a minimal, heavily commented helper that POSTs
+`{ userId }` to localhost and touches nothing else); the connected OAuth account via Cloud v2
+`GET /users/{id}` with `user.advanced:read` (cached — 10 req/min per app user); and the public
+`users.roblox.com/v1/users/{id}` endpoint for account age. Consent is deferred — the route
+never starts an OAuth flow; it reports `needsConsent` and the UI asks when the user actually
+publishes. 2FA status is exposed by no supported API, so it is a link to Roblox settings, not
+a guess; under-16 audiences (Kids & Select) are reported closed, with Roblox's documented
+reasons. `npm run test:eligibility` sweeps the derivation across all source combinations.
 
 ## What works today
 
