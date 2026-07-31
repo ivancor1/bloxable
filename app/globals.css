@@ -1310,6 +1310,19 @@ a {
   line-height: 1.5;
 }
 
+/* The Toolbox fallback path, tucked behind a disclosure once Studio opened. */
+.eject-toolbox {
+  margin-top: 6px;
+}
+.eject-toolbox > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.eject-toolbox[open] > summary {
+  margin-bottom: 4px;
+}
+
 .eject-card > .dim:not(:first-of-type) {
   margin-top: 2px;
 }
