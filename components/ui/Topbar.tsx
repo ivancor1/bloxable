@@ -5,6 +5,7 @@ import type { ProjectMeta } from '@/lib/rbx/types'
 import { useAppStore } from '@/lib/state/store'
 import { IconGear, IconRedo, IconUndo } from './icons'
 import EjectModal, { type EjectResult } from './EjectModal'
+import OpenInStudio from './OpenInStudio'
 
 type Toast = { kind: 'ok' | 'err'; text: string; href?: string }
 
@@ -190,6 +191,7 @@ export default function Topbar({
             Export
           </a>
         )}
+        <OpenInStudio />
         <button
           className="btn btn-plain"
           onClick={() => void handleEject()}

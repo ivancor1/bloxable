@@ -3,18 +3,10 @@ import { promises as fs } from 'node:fs'
 import { buildPlace } from '@/lib/rbx/build'
 import { getProject } from '@/lib/store'
 import { errorResponse } from '@/app/api/_lib/http'
+import { safeFilename } from '@/app/api/_lib/filename'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-
-/** Strips everything but safe filename characters; never empty. */
-function safeFilename(name: string): string {
-  const cleaned = name
-    .replace(/[^A-Za-z0-9 _-]/g, '')
-    .trim()
-    .replace(/\s+/g, ' ')
-  return cleaned || 'project'
-}
 
 export async function GET(
   _req: NextRequest,
