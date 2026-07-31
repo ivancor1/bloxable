@@ -929,6 +929,25 @@ a {
   border-top: 1px solid var(--border);
 }
 
+/* Privacy statement in the settings sheet — always visible, never a disclosure.
+   Every sentence rendered inside it is backed by code (see the section in
+   SettingsSheet.tsx for the file-level citations). */
+.privacy-block {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.privacy-block p {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  margin: 0;
+}
+
 /* ---------------------------------------------------------------------- */
 /* Modals (paywall) + loading shell                                        */
 /* ---------------------------------------------------------------------- */

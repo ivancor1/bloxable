@@ -321,6 +321,30 @@ export default function SettingsSheet({ onClose }: { onClose: () => void }) {
             </div>
           </details>
 
+          {/* Privacy — every sentence below is a code-backed guarantee, not marketing.
+              Do not extend this copy beyond what the code verifiably does:
+              · files on this computer / no servers  → lib/store/index.ts (all persistence is fs under data/; no DB, no remote store)
+              · chat goes only to the connected AI provider, on the user's key → lib/ai/provider.ts (key from .env.local), lib/ai/providers/{openai,anthropic}.ts (official SDKs, default endpoints, no other sink)
+              · we never see/keep/train → no Bloxable-operated backend exists anywhere in the codebase
+              · OpenAI store:false → lib/ai/providers/openai.ts
+              · provider-side handling is theirs → nothing in code can guarantee a third party, so the copy assigns it to their API terms instead of claiming it
+              · Publish/Eject only on click → app/api/projects/[id]/{publish,eject}/route.ts (POST-only, invoked from explicit buttons)
+              · no analytics/trackers, framework telemetry off → repo-wide audit + next.config.ts */}
+          <div className="privacy-block">
+            <div className="account-head">Privacy</div>
+            <p>Your games, chats and settings are files on this computer. Bloxable has no servers, so none of it is stored on any.</p>
+            <p>
+              When you chat, your message and your game go only to the AI provider you connected (OpenAI or Anthropic), with your own
+              key, so it can build for you.
+            </p>
+            <p>
+              We can&apos;t see, keep, or train on your projects — they never pass through us. What the AI provider does with what you
+              send is covered by its API terms; we tell OpenAI not to store your chats.
+            </p>
+            <p>Publish and Eject send your game to Roblox — only when you click them.</p>
+            <p>No analytics, no trackers, no hidden reporting — the web framework&apos;s usage stats are switched off too.</p>
+          </div>
+
           <p className="settings-footer">
             Preview renders real place data (parts, colors, lighting) and screen UI. Terrain, meshes and image assets show in Roblox only.
           </p>

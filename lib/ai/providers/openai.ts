@@ -74,6 +74,11 @@ export function createOpenAISession(init: SessionInit): ProviderSession {
             messages,
             tools,
             max_completion_tokens: init.maxTokens,
+            // Privacy: never let OpenAI store this completion for its
+            // distillation/evals products. `false` is the documented default
+            // for Chat Completions, but the user's project content is in this
+            // request, so the opt-out is stated rather than assumed.
+            store: false,
             ...(init.cacheKey ? { prompt_cache_key: init.cacheKey } : {}),
           },
           { signal },
