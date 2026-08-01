@@ -307,6 +307,93 @@ function finite(value: RbxPropValue): boolean {
   }
 }
 
+// --- op shape (strict keys) ---------------------------------------------------
+//
+// validateOps checks property VALUES against the API dump, but it never looked
+// at the KEYS of an op object — so a payload with `properties` instead of
+// `props` type-checked as "an update with no props", applied cleanly, and
+// silently dropped every property. Real observed failure. This checker rejects
+// any op carrying keys outside its documented shape, with a did-you-mean for
+// the mistakes that actually happen.
+
+const OP_KEYS: Record<string, Set<string>> = {
+  create: new Set(['op', 'parentId', 'instance']),
+  update: new Set(['op', 'id', 'props', 'attributes', 'tags']),
+  rename: new Set(['op', 'id', 'name']),
+  delete: new Set(['op', 'id']),
+  reparent: new Set(['op', 'id', 'parentId']),
+}
+
+const INSTANCE_KEYS = new Set(['id', 'className', 'name', 'props', 'attributes', 'tags', 'children'])
+
+/** The wrong keys people (and models) actually send, mapped to the right ones. */
+const KEY_HINTS: Record<string, string> = {
+  properties: 'props',
+  property: 'props',
+  Props: 'props',
+  parent: 'parentId',
+  parentID: 'parentId',
+  attrs: 'attributes',
+  class: 'className',
+  ClassName: 'className',
+}
+
+function unknownKeyError(where: string, key: string): string {
+  const hint = KEY_HINTS[key]
+  return hint
+    ? `${where}: unknown key "${key}" — did you mean "${hint}"?`
+    : `${where}: unknown key "${key}"`
+}
+
+function instanceShapeErrors(node: unknown, where: string, out: string[]): void {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) {
+    out.push(`${where}: instance must be an object`)
+    return
+  }
+  for (const key of Object.keys(node)) {
+    if (!INSTANCE_KEYS.has(key)) out.push(unknownKeyError(where, key))
+  }
+  const children = (node as { children?: unknown }).children
+  if (children !== undefined) {
+    if (!Array.isArray(children)) {
+      out.push(`${where}.children: must be an array`)
+      return
+    }
+    children.forEach((child, i) => instanceShapeErrors(child, `${where}.children[${i}]`, out))
+  }
+}
+
+/**
+ * Rejects ops whose SHAPE is wrong — unknown top-level keys, unknown op kinds,
+ * non-object entries — before any of them can be half-applied. Returns every
+ * problem found; an empty array means the batch is shaped like real PatchOps
+ * (their VALUES still go through validateOps as always).
+ */
+export function strictOpShapeErrors(ops: unknown[]): string[] {
+  const out: string[] = []
+  ops.forEach((op, i) => {
+    const where = `ops[${i}]`
+    if (!op || typeof op !== 'object' || Array.isArray(op)) {
+      out.push(`${where}: must be an object`)
+      return
+    }
+    const record = op as Record<string, unknown>
+    const kind = record.op
+    if (typeof kind !== 'string' || !(kind in OP_KEYS)) {
+      out.push(`${where}: "op" must be one of ${Object.keys(OP_KEYS).join(', ')}`)
+      return
+    }
+    const allowed = OP_KEYS[kind]
+    for (const key of Object.keys(record)) {
+      if (!allowed.has(key)) out.push(unknownKeyError(`${where} (${kind})`, key))
+    }
+    if (kind === 'create' && 'instance' in record) {
+      instanceShapeErrors(record.instance, `${where}.instance`, out)
+    }
+  })
+  return out
+}
+
 /**
  * Validates one property write. Returns a normalized value (enum tokens get
  * their numeric value + enumName + itemName filled in) or an error string.

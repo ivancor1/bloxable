@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { PatchOp } from '@/lib/rbx/types'
 import { applyPatchOps } from '@/lib/rbx/tree'
-import { loadReflection, validateOps } from '@/lib/rbx/validate'
+import { loadReflection, strictOpShapeErrors, validateOps } from '@/lib/rbx/validate'
 import { getTree, pushHistory, saveTree } from '@/lib/store'
 import { errorResponse, jsonError } from '@/app/api/_lib/http'
 
@@ -31,6 +31,15 @@ export async function POST(
   }
   if (ops.length > 200) {
     return jsonError('Too many ops in one batch (max 200).', 400)
+  }
+
+  // Shape first, values second. An op with keys outside its documented shape
+  // (`properties` for `props` was the real case) used to type-check as an op
+  // with nothing in it and apply as a silent no-op — reject the batch instead,
+  // naming every wrong key, so nothing half-applies.
+  const shapeErrors = strictOpShapeErrors(ops)
+  if (shapeErrors.length > 0) {
+    return jsonError(shapeErrors.join(' | '), 422)
   }
 
   try {

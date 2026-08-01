@@ -15,7 +15,8 @@
     "setup:universe": "node scripts/setup-universe.mjs",
     "mint:place": "node scripts/mint-place.mjs",
     "test:model": "node scripts/test-model.mjs",
-    "test:eject": "node scripts/test-eject-status.mjs"
+    "test:eject": "node scripts/test-eject-status.mjs",
+    "test:ops": "node scripts/test-ops-strict.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
