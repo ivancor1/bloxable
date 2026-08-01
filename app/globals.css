@@ -1310,6 +1310,58 @@ a {
   line-height: 1.5;
 }
 
+/* The share link — the conversion event. Distinct, calm, copyable. */
+.share-link {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.share-link-url {
+  font-size: 12.5px;
+  word-break: break-all;
+  color: var(--accent-deep);
+  user-select: all;
+}
+.share-link-actions {
+  display: flex;
+  gap: 8px;
+}
+.share-link-paste {
+  display: flex;
+  gap: 6px;
+}
+.share-link-paste input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: 6px 8px;
+  font-size: 12.5px;
+  outline: none;
+}
+.share-link-paste input:focus {
+  border-color: var(--accent);
+}
+
+/* The Toolbox fallback path, tucked behind a disclosure once Studio opened. */
+.eject-toolbox {
+  margin-top: 6px;
+}
+.eject-toolbox > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.eject-toolbox[open] > summary {
+  margin-bottom: 4px;
+}
+
 .eject-card > .dim:not(:first-of-type) {
   margin-top: 2px;
 }

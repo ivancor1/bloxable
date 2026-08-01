@@ -281,3 +281,37 @@ export function outcomeFromEjectResponse(status: number, body: unknown, projectN
 export function networkFailureOutcome(projectName: string): EjectFailed {
   return { kind: 'failed', projectName, code: 'network', detail: null }
 }
+
+// --- the Studio chain ---------------------------------------------------------
+//
+// After a successful eject the app launches Roblox Studio with the full place
+// file loaded (POST /api/projects/[id]/open-studio), so the one remaining user
+// action is File → Publish — not the seven-step Toolbox dance. These states are
+// what the modal renders while that happens. Same honesty rules as the eject
+// outcome: 'opened' is only claimed when the route confirmed the process
+// spawned, and a failure keeps the server's message verbatim.
+
+export type StudioChain =
+  | { kind: 'launching' }
+  | { kind: 'opened' }
+  /** 424 — Studio is not installed here (or the OS is unsupported). Expected, not an error. */
+  | { kind: 'unavailable'; message: string }
+  | { kind: 'failed'; message: string }
+
+/** Maps one open-studio response to the chain state the modal renders. */
+export function studioChainFromResponse(status: number, body: unknown): StudioChain {
+  if (status >= 200 && status < 300) return { kind: 'opened' }
+  const rec = isRecord(body) ? body : {}
+  const message =
+    typeof rec.error === 'string' && rec.error
+      ? rec.error
+      : typeof rec.message === 'string' && rec.message
+        ? rec.message
+        : `Roblox Studio could not be opened (HTTP ${status}).`
+  return status === 424 ? { kind: 'unavailable', message } : { kind: 'failed', message }
+}
+
+/** The open-studio fetch itself threw — the request never reached the route. */
+export function studioChainNetworkFailure(): StudioChain {
+  return { kind: 'failed', message: 'The request to open Studio never got an answer — is the app still running?' }
+}

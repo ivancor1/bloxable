@@ -52,6 +52,8 @@ const {
   isEjectErrorCode,
   networkFailureOutcome,
   outcomeFromEjectResponse,
+  studioChainFromResponse,
+  studioChainNetworkFailure,
 } = await import('../lib/roblox/eject-status.ts')
 
 // --- failure copy ------------------------------------------------------------
@@ -191,6 +193,39 @@ const network = networkFailureOutcome('My Game')
 eq(network.kind, 'failed', 'network failure is a failure')
 eq(network.code, 'network', 'network code')
 eq(network.projectName, 'My Game', 'project name carried')
+
+// --- the Studio chain ----------------------------------------------------------
+
+section('studio chain after eject')
+
+// The open-studio route's real success shape (observed live 2026-07-30).
+const opened = studioChainFromResponse(200, {
+  filePath: '/x/data/projects/p1/studio/My Game.rbxl',
+  bytes: 12345,
+  executable: '/Applications/RobloxStudio.app/Contents/MacOS/RobloxStudio',
+  args: ['--task', 'EditFile', '--localPlaceFile', '/x/data/projects/p1/studio/My Game.rbxl'],
+})
+eq(opened.kind, 'opened', '2xx → opened')
+
+// 424 is the route's documented Studio-missing answer — expected, not an error.
+const unavailable = studioChainFromResponse(424, {
+  error: 'Roblox Studio is not installed. Install Roblox Studio from create.roblox.com (see create.roblox.com/docs/en-us/studio/setup), then try again.',
+})
+eq(unavailable.kind, 'unavailable', '424 → unavailable, not failed')
+ok(unavailable.message.includes('not installed'), 'route message kept verbatim')
+
+// Everything else is a plain failure, message verbatim when present.
+eq(studioChainFromResponse(500, { error: 'Model build failed' }).kind, 'failed', '500 → failed')
+eq(studioChainFromResponse(500, { error: 'Model build failed' }).message, 'Model build failed', '500 message verbatim')
+eq(studioChainFromResponse(404, null).kind, 'failed', 'null body → failed')
+ok(studioChainFromResponse(404, null).message.includes('404'), 'no message → status named, not invented')
+
+// A 2xx never needs a body to count — the route only answers 2xx after spawn.
+eq(studioChainFromResponse(204, null).kind, 'opened', 'bodyless 2xx → opened')
+
+// The fetch itself throwing.
+eq(studioChainNetworkFailure().kind, 'failed', 'network failure is a failure')
+ok(studioChainNetworkFailure().message.length > 0, 'network failure carries a message')
 
 // --- report ------------------------------------------------------------------
 

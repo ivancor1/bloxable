@@ -9,7 +9,10 @@ import OpenInStudio from './OpenInStudio'
 import {
   networkFailureOutcome,
   outcomeFromEjectResponse,
+  studioChainFromResponse,
+  studioChainNetworkFailure,
   type EjectOutcome,
+  type StudioChain,
 } from '@/lib/roblox/eject-status'
 
 type Toast = { kind: 'ok' | 'err'; text: string; href?: string }
@@ -47,6 +50,7 @@ export default function Topbar({
   const [publishing, setPublishing] = useState(false)
   const [ejecting, setEjecting] = useState(false)
   const [eject, setEject] = useState<EjectOutcome | null>(null)
+  const [ejectStudio, setEjectStudio] = useState<StudioChain | null>(null)
   const [toast, setToast] = useState<Toast | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -140,7 +144,15 @@ export default function Topbar({
       if (res.ok && isRecord(data) && isRecord(data.meta)) setProjectMeta(data.meta as unknown as ProjectMeta)
       // Success, still-processing and every failure all land in the modal —
       // the mapping (and its copy) lives in lib/roblox/eject-status.
-      setEject(outcomeFromEjectResponse(res.status, data, project?.name ?? 'Your game'))
+      const outcome = outcomeFromEjectResponse(res.status, data, project?.name ?? 'Your game')
+      setEject(outcome)
+      // The chain: upload landed → open Studio with the full place loaded, so
+      // the one remaining step is File → Publish. Skipped when moderation said
+      // no — that moment belongs to the rejection message, not a new window.
+      const chain =
+        outcome.kind === 'processing' ||
+        (outcome.kind === 'uploaded' && outcome.moderation.verdict !== 'rejected')
+      if (chain) void launchStudioChain()
     } catch {
       setEject(networkFailureOutcome(project?.name ?? 'Your game'))
     } finally {
@@ -148,8 +160,24 @@ export default function Topbar({
     }
   }
 
-  const playUrl =
-    project?.lastPublish && project.roblox?.placeId
+  /** POSTs the existing open-studio route and mirrors its answer into the modal. */
+  async function launchStudioChain() {
+    if (!projectId) return
+    setEjectStudio({ kind: 'launching' })
+    try {
+      const res = await fetch(`/api/projects/${projectId}/open-studio`, { method: 'POST' })
+      const data: unknown = await res.json().catch(() => null)
+      setEjectStudio(studioChainFromResponse(res.status, data))
+    } catch {
+      setEjectStudio(studioChainNetworkFailure())
+    }
+  }
+
+  // The user's own published game outranks the operator-universe copy — the
+  // whole point of the eject path is that THEIR account hosts the game.
+  const playUrl = project?.userPlace
+    ? `https://www.roblox.com/games/start?placeId=${project.userPlace.placeId}`
+    : project?.lastPublish && project.roblox?.placeId
       ? `https://www.roblox.com/games/start?placeId=${project.roblox.placeId}`
       : undefined
 
@@ -211,7 +239,19 @@ export default function Topbar({
           </div>
         )}
       </div>
-      {eject && <EjectModal outcome={eject} onClose={() => setEject(null)} onOpenSettings={onOpenSettings} />}
+      {eject && (
+        <EjectModal
+          outcome={eject}
+          studio={ejectStudio}
+          projectId={projectId ?? undefined}
+          onClose={() => {
+            setEject(null)
+            setEjectStudio(null)
+          }}
+          onOpenSettings={onOpenSettings}
+          onRetryStudio={() => void launchStudioChain()}
+        />
+      )}
     </div>
   )
 }
