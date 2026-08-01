@@ -138,4 +138,11 @@ export interface ProjectMeta {
    * Roblox account. Every eject mints a new asset, so this is the latest one.
    */
   lastEject?: { assetId: string; at: string; moderationState?: string }
+  /**
+   * The game the USER published on their own account (eject → Studio →
+   * File → Publish). Stamped when the published-place route finds it via the
+   * public games API ('games-api') or the user pastes their link once
+   * ('user-link'). This is the shareable link's source of truth.
+   */
+  userPlace?: { placeId: string; universeId: string; at: string; source: 'games-api' | 'user-link' }
 }

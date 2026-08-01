@@ -173,8 +173,11 @@ export default function Topbar({
     }
   }
 
-  const playUrl =
-    project?.lastPublish && project.roblox?.placeId
+  // The user's own published game outranks the operator-universe copy — the
+  // whole point of the eject path is that THEIR account hosts the game.
+  const playUrl = project?.userPlace
+    ? `https://www.roblox.com/games/start?placeId=${project.userPlace.placeId}`
+    : project?.lastPublish && project.roblox?.placeId
       ? `https://www.roblox.com/games/start?placeId=${project.roblox.placeId}`
       : undefined
 
@@ -240,6 +243,7 @@ export default function Topbar({
         <EjectModal
           outcome={eject}
           studio={ejectStudio}
+          projectId={projectId ?? undefined}
           onClose={() => {
             setEject(null)
             setEjectStudio(null)

@@ -188,6 +188,7 @@ export interface ProjectPatch {
   roblox?: { universeId?: string; placeId?: string }
   lastPublish?: { versionNumber: number; at: string }
   lastEject?: { assetId: string; at: string; moderationState?: string }
+  userPlace?: { placeId: string; universeId: string; at: string; source: 'games-api' | 'user-link' }
 }
 
 export async function updateProject(id: string, patch: ProjectPatch): Promise<ProjectMeta> {
@@ -206,6 +207,9 @@ export async function updateProject(id: string, patch: ProjectPatch): Promise<Pr
     }
     if (patch.lastEject !== undefined) {
       meta.lastEject = patch.lastEject
+    }
+    if (patch.userPlace !== undefined) {
+      meta.userPlace = patch.userPlace
     }
     meta.updatedAt = new Date().toISOString()
     await writeJsonAtomic(projectMetaPath(id), meta)

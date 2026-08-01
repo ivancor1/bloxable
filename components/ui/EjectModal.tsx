@@ -1,5 +1,7 @@
 'use client'
 
+import { useCallback, useEffect, useRef, useState } from 'react'
+
 /**
  * The one place the eject flow talks to the user, success or not.
  *
@@ -82,6 +84,172 @@ function StudioChainStatus({ studio, onRetry }: { studio: StudioChain; onRetry?:
   )
 }
 
+// --- the share link -----------------------------------------------------------
+
+interface FoundPlace {
+  placeId: string
+  shareUrl: string
+  source: string
+}
+
+type FinderState =
+  | { kind: 'watching'; tries: number }
+  | { kind: 'found'; place: FoundPlace }
+  | { kind: 'idle-hint'; detail: string | null }
+  | { kind: 'error'; message: string }
+
+const FINDER_INTERVAL_MS = 10_000
+const FINDER_MAX_TRIES = 30 // ~5 minutes of watching, then hints + paste box
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null
+}
+
+function placeFrom(body: unknown): FoundPlace | null {
+  if (!isRecord(body) || body.found !== true || !isRecord(body.place)) return null
+  const place = body.place
+  if (typeof place.placeId !== 'string' || typeof place.shareUrl !== 'string') return null
+  return { placeId: place.placeId, shareUrl: place.shareUrl, source: typeof place.source === 'string' ? place.source : '' }
+}
+
+/**
+ * Watches for the game the user publishes from Studio and turns it into the
+ * link they can send a friend. Polls the published-place route (public games
+ * API underneath — it can only see PUBLIC games, and the copy owns that), and
+ * offers the paste-once fallback when watching is not enough. Free path:
+ * nothing here needs the operator key or any paid step.
+ */
+function ShareLinkFinder({ projectId, active }: { projectId: string; active: boolean }) {
+  const [state, setState] = useState<FinderState>({ kind: 'watching', tries: 0 })
+  const [pasted, setPasted] = useState('')
+  const [pasteBusy, setPasteBusy] = useState(false)
+  const [pasteError, setPasteError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const tries = useRef(0)
+
+  const poll = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/published-place`, { method: 'POST' })
+      const body: unknown = await res.json().catch(() => null)
+      const place = placeFrom(body)
+      if (place) {
+        setState({ kind: 'found', place })
+        return
+      }
+      tries.current += 1
+      if (tries.current >= FINDER_MAX_TRIES) {
+        const detail = isRecord(body) && typeof body.detail === 'string' ? body.detail : null
+        setState({ kind: 'idle-hint', detail })
+        return
+      }
+      setState({ kind: 'watching', tries: tries.current })
+      timer.current = setTimeout(() => void poll(), FINDER_INTERVAL_MS)
+    } catch {
+      setState({ kind: 'error', message: 'Could not check — is the app still running?' })
+    }
+  }, [projectId])
+
+  useEffect(() => {
+    if (!active) return
+    tries.current = 0
+    void poll()
+    return () => {
+      if (timer.current) clearTimeout(timer.current)
+    }
+  }, [active, poll])
+
+  async function submitPaste() {
+    if (!pasted.trim() || pasteBusy) return
+    setPasteBusy(true)
+    setPasteError(null)
+    try {
+      const res = await fetch(`/api/projects/${projectId}/published-place`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ link: pasted }),
+      })
+      const body: unknown = await res.json().catch(() => null)
+      const place = placeFrom(body)
+      if (res.ok && place) {
+        setState({ kind: 'found', place })
+      } else {
+        const message = isRecord(body) && typeof body.error === 'string' ? body.error : 'That link did not check out.'
+        setPasteError(message)
+      }
+    } catch {
+      setPasteError('Could not check the link — is the app still running?')
+    } finally {
+      setPasteBusy(false)
+    }
+  }
+
+  async function copyLink(url: string) {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // The link is visible and selectable either way.
+    }
+  }
+
+  if (!active && state.kind !== 'found') return null
+
+  if (state.kind === 'found') {
+    return (
+      <div className="share-link">
+        <p>
+          <strong>Your link — send it to a friend:</strong>
+        </p>
+        <p className="share-link-url mono">{state.place.shareUrl}</p>
+        <div className="share-link-actions">
+          <button className="btn btn-accent" onClick={() => void copyLink(state.place.shareUrl)}>
+            {copied ? 'Copied' : 'Copy link'}
+          </button>
+          <a className="btn btn-plain" href={state.place.shareUrl} target="_blank" rel="noopener noreferrer">
+            Open
+          </a>
+        </div>
+        <p className="dim">
+          If a friend cannot join, check Roblox&apos;s Game Settings → Permissions — the game has to be Public.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="share-link">
+      {state.kind === 'watching' && (
+        <p className="dim">
+          Watching for your publish… After File → Publish, set the game to Public (Game Settings → Permissions) — the
+          moment Roblox lists it, your share link lands here.
+        </p>
+      )}
+      {state.kind === 'idle-hint' && (
+        <p className="dim">
+          {state.detail ??
+            'Roblox has not listed the game yet. If you published it, make sure it is Public — or paste its link below.'}
+        </p>
+      )}
+      {state.kind === 'error' && <p className="dim">{state.message}</p>}
+
+      <div className="share-link-paste">
+        <input
+          value={pasted}
+          onChange={(e) => setPasted(e.target.value)}
+          placeholder="Already published? Paste your game link here once"
+          spellCheck={false}
+        />
+        <button className="btn btn-plain" onClick={() => void submitPaste()} disabled={pasteBusy || !pasted.trim()}>
+          {pasteBusy ? 'Checking…' : 'Use it'}
+        </button>
+      </div>
+      {pasteError && <p className="eject-detail dim">{pasteError}</p>}
+    </div>
+  )
+}
+
 /**
  * The Toolbox route — the fallback when Studio is not installed (and there for
  * anyone who prefers it). This is the MODEL path, so the folder-moving and
@@ -112,7 +280,7 @@ function ToolboxSteps({ result, open }: { result: EjectUploaded; open: boolean }
   )
 }
 
-function Uploaded({ result, studio, onRetryStudio }: { result: EjectUploaded; studio: StudioChain | null; onRetryStudio?: () => void }) {
+function Uploaded({ result, studio, onRetryStudio, projectId }: { result: EjectUploaded; studio: StudioChain | null; onRetryStudio?: () => void; projectId?: string }) {
   const where = result.username ? `your Roblox inventory (@${result.username})` : 'your Roblox inventory'
 
   if (result.moderation.verdict === 'rejected') {
@@ -146,6 +314,8 @@ function Uploaded({ result, studio, onRetryStudio }: { result: EjectUploaded; st
 
       {studio && <StudioChainStatus studio={studio} onRetry={onRetryStudio} />}
 
+      {projectId && <ShareLinkFinder projectId={projectId} active />}
+
       <ToolboxSteps result={result} open={!studio || (studio.kind !== 'opened' && studio.kind !== 'launching')} />
 
       {result.moderation.verdict === 'reviewing' && (
@@ -164,7 +334,7 @@ function Uploaded({ result, studio, onRetryStudio }: { result: EjectUploaded; st
   )
 }
 
-function Processing({ result, studio, onRetryStudio }: { result: EjectProcessing; studio: StudioChain | null; onRetryStudio?: () => void }) {
+function Processing({ result, studio, onRetryStudio, projectId }: { result: EjectProcessing; studio: StudioChain | null; onRetryStudio?: () => void; projectId?: string }) {
   const where = result.username ? `your Roblox inventory (@${result.username})` : 'your Roblox inventory'
   return (
     <>
@@ -184,6 +354,8 @@ function Processing({ result, studio, onRetryStudio }: { result: EjectProcessing
         </p>
       )}
 
+      {projectId && <ShareLinkFinder projectId={projectId} active />}
+
       {result.serviceFolders.length > 0 && (
         <p className="dim">
           If you go the Toolbox way: once it arrives, move the {list(result.serviceFolders)} folder
@@ -200,6 +372,7 @@ function Processing({ result, studio, onRetryStudio }: { result: EjectProcessing
 export default function EjectModal({
   outcome,
   studio = null,
+  projectId,
   onClose,
   onOpenSettings,
   onRetryStudio,
@@ -207,6 +380,8 @@ export default function EjectModal({
   outcome: EjectOutcome
   /** State of the automatic open-in-Studio chain; null when it never started. */
   studio?: StudioChain | null
+  /** Enables the share-link finder — the watcher needs a project to stamp. */
+  projectId?: string
   onClose: () => void
   onOpenSettings?: () => void
   onRetryStudio?: () => void
@@ -216,8 +391,12 @@ export default function EjectModal({
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-card eject-card" onClick={(e) => e.stopPropagation()}>
-        {outcome.kind === 'uploaded' && <Uploaded result={outcome} studio={studio} onRetryStudio={onRetryStudio} />}
-        {outcome.kind === 'processing' && <Processing result={outcome} studio={studio} onRetryStudio={onRetryStudio} />}
+        {outcome.kind === 'uploaded' && (
+          <Uploaded result={outcome} studio={studio} onRetryStudio={onRetryStudio} projectId={outcome.moderation.verdict === 'rejected' ? undefined : projectId} />
+        )}
+        {outcome.kind === 'processing' && (
+          <Processing result={outcome} studio={studio} onRetryStudio={onRetryStudio} projectId={projectId} />
+        )}
         {outcome.kind === 'failed' && failure && (
           <>
             <p>
